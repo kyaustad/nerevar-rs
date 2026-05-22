@@ -1,0 +1,461 @@
+@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;900&family=Cinzel+Decorative:wght@400;700&family=EB+Garamond:ital,wght@0,400;0,500;1,400;1,500&display=swap");
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-card-border: hsl(var(--card-border));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-popover-border: hsl(var(--popover-border));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-primary-border: var(--primary-border);
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-secondary-border: var(--secondary-border);
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-muted-border: var(--muted-border);
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-accent-border: var(--accent-border);
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-destructive-border: var(--destructive-border);
+
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-primary-border: var(--sidebar-primary-border);
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-accent-border: var(--sidebar-accent-border);
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+
+  --font-sans: "Geist Variable", sans-serif;
+  --font-serif: var(--app-font-serif);
+  --font-mono: var(--app-font-mono);
+  --font-display: var(--app-font-display);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-heading: var(--font-sans);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --button-outline: rgba(0, 0, 0, 0.1);
+  --badge-outline: rgba(0, 0, 0, 0.05);
+  --opaque-button-border-intensity: -8;
+  --elevate-1: rgba(0, 0, 0, 0.04);
+  --elevate-2: rgba(0, 0, 0, 0.08);
+
+  /* Morrowind light theme */
+  --background: 36 28% 93%;
+  --foreground: 0 28% 14%;
+  --border: 34 22% 72%;
+  --input: 34 18% 80%;
+  --ring: 34 48% 42%;
+
+  --card: 36 22% 88%;
+  --card-foreground: 0 28% 14%;
+  --card-border: 34 25% 65%;
+
+  --popover: 36 22% 96%;
+  --popover-foreground: 0 28% 14%;
+  --popover-border: 34 25% 65%;
+
+  --primary: 0 48% 32%;
+  --primary-foreground: 36 55% 95%;
+
+  --secondary: 25 22% 82%;
+  --secondary-foreground: 0 30% 18%;
+
+  --muted: 36 18% 84%;
+  --muted-foreground: 0 18% 32%;
+
+  --accent: 34 52% 38%;
+  --accent-foreground: 36 55% 98%;
+
+  --destructive: 0 55% 38%;
+  --destructive-foreground: 36 80% 98%;
+
+  --nerevar-glow: 36 45% 75%;
+  --nerevar-bg-end: 36 22% 88%;
+
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+
+  --app-font-sans: "EB Garamond", Georgia, serif;
+  --app-font-serif: "EB Garamond", Georgia, serif;
+  --app-font-mono: "Courier New", Courier, monospace;
+  --app-font-display: "Cinzel", "Times New Roman", serif;
+  --radius: 0.625rem;
+
+  --shadow-2xs: 0px 1px 3px 0px rgba(0, 0, 0, 0.5);
+  --shadow-xs: 0px 1px 3px 0px rgba(0, 0, 0, 0.5);
+  --shadow-sm:
+    0px 2px 4px 0px rgba(0, 0, 0, 0.6), 0px 1px 2px -1px rgba(0, 0, 0, 0.5);
+  --shadow:
+    0px 2px 6px 0px rgba(0, 0, 0, 0.7), 0px 1px 2px -1px rgba(0, 0, 0, 0.6);
+  --shadow-md:
+    0px 4px 8px 0px rgba(0, 0, 0, 0.7), 0px 2px 4px -1px rgba(0, 0, 0, 0.6);
+  --shadow-lg:
+    0px 8px 16px 0px rgba(0, 0, 0, 0.8), 0px 4px 6px -1px rgba(0, 0, 0, 0.7);
+  --shadow-xl:
+    0px 16px 24px 0px rgba(0, 0, 0, 0.8), 0px 8px 10px -1px rgba(0, 0, 0, 0.7);
+  --shadow-2xl: 0px 24px 40px 0px rgba(0, 0, 0, 0.9);
+
+  --primary-border: hsl(
+    from hsl(var(--primary)) h s
+      calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
+  --secondary-border: hsl(
+    from hsl(var(--secondary)) h s
+      calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
+  --muted-border: hsl(
+    from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) /
+      alpha
+  );
+  --accent-border: hsl(
+    from hsl(var(--accent)) h s
+      calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
+  --destructive-border: hsl(
+    from hsl(var(--destructive)) h s
+      calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
+  --sidebar-primary-border: hsl(
+    from hsl(var(--sidebar-primary)) h s
+      calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
+  --sidebar-accent-border: hsl(
+    from hsl(var(--sidebar-accent)) h s
+      calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    box-sizing: border-box;
+  }
+
+  body {
+    @apply antialiased bg-background text-foreground;
+    font-family: var(--app-font-sans);
+    font-size: 16px;
+    line-height: 1.6;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--app-font-display);
+    letter-spacing: 0.05em;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--app-font-display);
+  }
+
+  .morrowind-divider {
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(var(--accent) / 0.5),
+      hsl(var(--accent) / 0.8),
+      hsl(var(--accent) / 0.5),
+      transparent
+    );
+  }
+
+  .glass-panel {
+    background: hsl(var(--card) / 0.8);
+    backdrop-filter: blur(8px);
+    border: 1px solid hsl(var(--border));
+  }
+
+  .glow-red {
+    box-shadow:
+      0 0 20px hsl(var(--primary) / 0.3),
+      0 0 40px hsl(var(--primary) / 0.1);
+  }
+
+  .glow-gold {
+    box-shadow:
+      0 0 16px hsl(var(--accent) / 0.4),
+      0 0 32px hsl(var(--accent) / 0.15);
+  }
+
+  .text-gradient-gold {
+    background: linear-gradient(
+      135deg,
+      hsl(34 70% 60%),
+      hsl(34 62% 42%),
+      hsl(34 70% 65%)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .border-gradient {
+    border-image: linear-gradient(
+        90deg,
+        transparent,
+        hsl(var(--accent) / 0.6),
+        transparent
+      )
+      1;
+  }
+
+  .nerevar-bg {
+    background: hsl(var(--background));
+  }
+
+  [id^="nerevar-ember-"] {
+    z-index: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  [id^="nerevar-ember-"] canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  .ember-fire-glow {
+    background: radial-gradient(
+      ellipse 130% 40% at 50% 100%,
+      hsl(34 70% 45% / 0.28),
+      hsl(0 60% 25% / 0.12) 40%,
+      transparent 72%
+    );
+  }
+
+  :root:not(.dark) .ember-fire-glow {
+    background: radial-gradient(
+      ellipse 120% 30% at 50% 100%,
+      hsl(25 75% 35% / 0.18),
+      hsl(34 60% 40% / 0.08) 50%,
+      transparent 70%
+    );
+  }
+
+  .dark .text-gradient-gold {
+    background: linear-gradient(
+      135deg,
+      hsl(34 65% 68%),
+      hsl(34 55% 48%),
+      hsl(34 70% 72%)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  input[type="search"]::-webkit-search-cancel-button {
+    @apply hidden;
+  }
+
+  .toggle-elevate::before,
+  .toggle-elevate-2::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    border-radius: inherit;
+    z-index: -1;
+  }
+
+  .hover-elevate:not(.no-default-hover-elevate),
+  .active-elevate:not(.no-default-active-elevate) {
+    position: relative;
+    z-index: 0;
+  }
+
+  .hover-elevate:not(.no-default-hover-elevate)::after,
+  .active-elevate:not(.no-default-active-elevate)::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    border-radius: inherit;
+    z-index: 999;
+  }
+
+  .hover-elevate:hover:not(.no-default-hover-elevate)::after {
+    background-color: var(--elevate-1);
+  }
+
+  .active-elevate:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-2);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--accent) / 0.3),
+    hsl(var(--accent) / 0.8),
+    hsl(var(--accent) / 0.3)
+  );
+  background-size: 200% auto;
+  animation: shimmer 2s linear infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--accent) / 0.5);
+}
+
+.dark {
+  --button-outline: rgba(255, 255, 255, 0.08);
+  --badge-outline: rgba(255, 255, 255, 0.05);
+  --elevate-1: rgba(255, 255, 255, 0.04);
+  --elevate-2: rgba(255, 255, 255, 0.09);
+
+  /* Morrowind dark theme */
+  --background: 0 28% 5%;
+  --foreground: 36 45% 92%;
+  --border: 34 22% 24%;
+  --input: 34 22% 20%;
+  --ring: 34 48% 52%;
+
+  --card: 0 32% 9%;
+  --card-foreground: 36 45% 92%;
+  --card-border: 34 30% 28%;
+
+  --popover: 0 32% 9%;
+  --popover-foreground: 36 45% 92%;
+  --popover-border: 34 30% 28%;
+
+  --primary: 0 55% 24%;
+  --primary-foreground: 34 60% 78%;
+
+  --secondary: 25 28% 13%;
+  --secondary-foreground: 34 60% 78%;
+
+  --muted: 0 25% 12%;
+  --muted-foreground: 34 28% 68%;
+
+  --accent: 34 52% 58%;
+  --accent-foreground: 36 55% 96%;
+
+  --destructive: 0 60% 32%;
+  --destructive-foreground: 36 80% 92%;
+
+  --nerevar-glow: 0 40% 14%;
+  --nerevar-bg-end: 0 28% 3%;
+
+  --chart-1: 34 52% 58%;
+  --chart-2: 34 40% 48%;
+  --chart-3: 0 40% 35%;
+  --chart-4: 25 28% 25%;
+  --chart-5: 0 28% 18%;
+  --sidebar: 0 32% 9%;
+  --sidebar-foreground: 36 45% 92%;
+  --sidebar-primary: 34 52% 58%;
+  --sidebar-primary-foreground: 36 55% 96%;
+  --sidebar-accent: 25 28% 13%;
+  --sidebar-accent-foreground: 34 60% 78%;
+  --sidebar-border: 34 22% 24%;
+  --sidebar-ring: 34 48% 52%;
+}

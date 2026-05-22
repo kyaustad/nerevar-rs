@@ -3,14 +3,14 @@
 export type GithubAssetResponse = {
   url: string;
   id: number;
-  nodeId: string;
+  node_id: string;
   name: string;
   label: string | null;
-  contentType: string;
+  content_type: string;
   state: string;
   size: number;
-  downloadCount: number;
-  createdAt: string;
-  updatedAt: string;
-  browserDownloadUrl: string;
+  download_count: number;
+  created_at: string;
+  updated_at: string;
+  browser_download_url: string;
 };

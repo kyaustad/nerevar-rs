@@ -22,7 +22,7 @@ pub struct NerevarConfig {
 }
 
 #[derive(Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub struct GithubAssetResponse {
     pub url: String,
@@ -40,7 +40,7 @@ pub struct GithubAssetResponse {
 }
 
 #[derive(Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub struct GithubReleaseResponse {
     pub url: String,

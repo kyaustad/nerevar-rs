@@ -7,6 +7,25 @@ import { useState } from "react";
 export default function App() {
   const [releases, setReleases] = useState<GithubReleaseResponse[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [configDirectory, setConfigDirectory] = useState<string>("");
+
+  const handleCreateConfigDirectory = async () => {
+    try {
+      const result = await invoke<string>("create_config_directory");
+      setConfigDirectory(result);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleGetNerevarConfigDirectory = async () => {
+    try {
+      const result = await invoke<string>("get_nerevar_config_directory");
+      setConfigDirectory(result);
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   const handleGetAllReleases = async () => {
     setIsLoading(true);
@@ -30,6 +49,13 @@ export default function App() {
         {isLoading ? "Loading..." : "Get All Releases"}
       </Button>
       <Button onClick={() => setReleases([])}>Clear Releases</Button>
+      <Button onClick={handleCreateConfigDirectory}>
+        Create Config Directory
+      </Button>
+      <Button onClick={handleGetNerevarConfigDirectory}>
+        Get Nerevar Config Directory
+      </Button>
+      <p>Config Directory: {configDirectory}</p>
       <div className="flex flex-col gap-2 p-16">
         {releases.map((release) => (
           <div key={release.id}>

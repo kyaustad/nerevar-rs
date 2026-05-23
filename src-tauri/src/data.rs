@@ -11,15 +11,29 @@ pub struct InstanceConfig {
 
 }
 
-#[derive(TS, Serialize, Deserialize)]
+#[derive(TS, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct NerevarConfig {
-    onboarding_complete: bool,
-    instances: Vec<InstanceConfig>,
-    root_instance_path: String,
-    base_tes3mp_path: String,
+    pub onboarding_complete: bool,
+    pub instances: Option<Vec<InstanceConfig>>,
+    pub root_instance_path: Option<String>,
+    pub base_tes3mp_path: Option<String>,
+    pub sync_port: i32,
 }
+
+// impl Default for NerevarConfig {
+//     fn default() -> Self {
+//         Self {
+//             onboarding_complete: false,
+//             instances: None,
+//             root_instance_path: None,
+//             base_tes3mp_path: None,
+//             sync_port: 25567,
+//         }
+//     }
+// }
+
 
 #[derive(Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]

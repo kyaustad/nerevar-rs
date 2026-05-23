@@ -1,24 +1,48 @@
-use tauri::State;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+
+use tauri::State;
+
+use crate::data::NerevarConfig;
 use crate::AppState;
-use std::path::Path;
 
-pub fn get_nerevar_config_directory(state: State<'_, Mutex<AppState>>) -> Result<String, String> {
-    let app_state = state.lock().unwrap();
-    let config_path = app_state.nerevar_config_path.clone();
-    let config_directory = Path::new(&config_path);
+const CONFIG_FILE_NAME: &str = "config.json";
 
-    if !config_directory.exists() {
-        std::fs::create_dir_all(&config_directory).map_err(|e| e.to_string())?;
-    }
-
-    Ok(config_directory.to_string_lossy().to_string())
+/// Same path as `app.path().app_data_dir()` / `config.json` (see Tauri `PathResolver::app_data_dir`).
+pub fn nerevar_config_file_path() -> Result<PathBuf, String> {
+    let context: tauri::Context<tauri::Wry> = tauri::generate_context!();
+    let identifier = context.config().identifier.clone();
+    let app_data_dir = dirs::data_dir()
+        .ok_or_else(|| "Failed to resolve app data directory".to_string())?
+        .join(identifier);
+    Ok(app_data_dir.join(CONFIG_FILE_NAME))
 }
 
-pub fn create_config_directory(config_directory: &str) -> Result<String, String> {
-    let config_path = Path::new(config_directory);
+pub fn load_or_create_nerevar_config_at(config_path: &Path) -> Result<NerevarConfig, String> {
     if !config_path.exists() {
-        std::fs::create_dir_all(&config_path).map_err(|e| e.to_string())?;
+        if let Some(parent) = config_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let default_config = NerevarConfig {
+            onboarding_complete: false,
+            instances: None,
+            root_instance_path: None,
+            base_tes3mp_path: None,
+            sync_port: 25567,
+        };
+        std::fs::write(
+            config_path,
+            serde_json::to_string_pretty(&default_config).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+        return Ok(default_config);
     }
-    Ok(config_path.to_string_lossy().to_string())
+
+    let contents = std::fs::read_to_string(config_path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&contents).map_err(|e| e.to_string())
+}
+
+pub fn load_or_create_nerevar_config(state: State<'_, Mutex<AppState>>) -> Result<NerevarConfig, String> {
+    let config_path = state.lock().unwrap().nerevar_config_path.clone();
+    load_or_create_nerevar_config_at(Path::new(&config_path))
 }

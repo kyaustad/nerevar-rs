@@ -2,30 +2,28 @@ import { EmberParticles } from "./components/custom/ember-particles";
 import { Button } from "./components/ui/button";
 import { invoke } from "@tauri-apps/api/core";
 import type { GithubReleaseResponse } from "./types";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import type { NerevarConfig } from "./types";
 
 export default function App() {
   const [releases, setReleases] = useState<GithubReleaseResponse[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [configDirectory, setConfigDirectory] = useState<string>("");
+  const [config, setConfig] = useState<NerevarConfig | null>(null);
 
-  const handleCreateConfigDirectory = async () => {
+  const handleGetNerevarConfig = async () => {
     try {
-      const result = await invoke<string>("create_config_directory");
-      setConfigDirectory(result);
+      const result = await invoke<NerevarConfig>(
+        "load_or_create_nerevar_config",
+      );
+      setConfig(result);
     } catch (error) {
       console.error(error);
     }
   };
 
-  const handleGetNerevarConfigDirectory = async () => {
-    try {
-      const result = await invoke<string>("get_nerevar_config_directory");
-      setConfigDirectory(result);
-    } catch (error) {
-      console.error(error);
-    }
-  };
+  useEffect(() => {
+    handleGetNerevarConfig();
+  }, []);
 
   const handleGetAllReleases = async () => {
     setIsLoading(true);
@@ -49,13 +47,17 @@ export default function App() {
         {isLoading ? "Loading..." : "Get All Releases"}
       </Button>
       <Button onClick={() => setReleases([])}>Clear Releases</Button>
-      <Button onClick={handleCreateConfigDirectory}>
-        Create Config Directory
-      </Button>
-      <Button onClick={handleGetNerevarConfigDirectory}>
-        Get Nerevar Config Directory
-      </Button>
-      <p>Config Directory: {configDirectory}</p>
+      <Button onClick={handleGetNerevarConfig}>Get Nerevar Config</Button>
+      <p>
+        Config:{" "}
+        {config?.onboardingComplete
+          ? "Onboarding Complete"
+          : "Onboarding Incomplete"}
+      </p>
+      <p>Instances: {config?.instances?.length}</p>
+      <p>Root Instance Path: {config?.rootInstancePath}</p>
+      <p>Base Tes3mp Path: {config?.baseTes3mpPath}</p>
+      <p>Sync Port: {config?.syncPort}</p>
       <div className="flex flex-col gap-2 p-16">
         {releases.map((release) => (
           <div key={release.id}>

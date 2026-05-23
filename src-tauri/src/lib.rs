@@ -2,14 +2,19 @@
 mod data;
 mod github_getters;
 mod config;
+mod nerevar_server;
+
+pub use nerevar_server::start_web_server;
 use tauri::Manager;
 use std::sync::Mutex;
 use tauri::State;
 use crate::data::GithubReleaseResponse;
+use crate::data::NerevarConfig;
 
 #[derive(Default)]
 struct AppState {
     nerevar_config_path: String,
+    nerevar_config: NerevarConfig,
 }
 
 #[tauri::command]
@@ -20,30 +25,34 @@ async fn get_all_releases() -> Result<Vec<GithubReleaseResponse>, String> {
 }
 
 #[tauri::command]
-fn get_nerevar_config_directory(state: State<'_, Mutex<AppState>>) -> Result<String, String> {
-    config::get_nerevar_config_directory(state)
+fn load_or_create_nerevar_config(state: State<'_, Mutex<AppState>>) -> Result<NerevarConfig, String> {
+    config::load_or_create_nerevar_config(state)
+
+
 }
 
-#[tauri::command]
-fn create_config_directory(state: State<'_, Mutex<AppState>>) -> Result<String, String> {
-    let app_state = state.lock().unwrap();
-    match config::create_config_directory(&app_state.nerevar_config_path) {
-        Ok(config_path) => Ok(config_path),
-        Err(e) => Err(e.to_string()),
-    }
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default().setup(|app| {
         app.manage(Mutex::new(AppState::default()));
-        let app_state = app.state::<Mutex<AppState>>();
-        let mut app_state = app_state.lock().unwrap();
-        app_state.nerevar_config_path = app.path().app_data_dir().expect("Failed to get app data dir").join("config").to_string_lossy().to_string();
+        app.state::<Mutex<AppState>>()
+            .lock()
+            .unwrap()
+            .nerevar_config_path = config::nerevar_config_file_path()
+                .expect("Failed to resolve config path")
+                .to_string_lossy()
+                .to_string();
+        let config = config::load_or_create_nerevar_config(app.state()).unwrap();
+        app.state::<Mutex<AppState>>()
+            .lock()
+            .unwrap()
+            .nerevar_config = config;
         Ok(())
     })
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_all_releases, get_nerevar_config_directory, create_config_directory])
+        .invoke_handler(tauri::generate_handler![get_all_releases, load_or_create_nerevar_config])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+

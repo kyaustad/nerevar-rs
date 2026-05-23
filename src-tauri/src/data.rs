@@ -8,7 +8,6 @@ pub struct InstanceConfig {
     pub name: String,
     pub description: String,
     pub root_path: String,
-
 }
 
 #[derive(TS, Serialize, Deserialize, Default)]
@@ -33,7 +32,6 @@ pub struct NerevarConfig {
 //         }
 //     }
 // }
-
 
 #[derive(Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -74,6 +72,4 @@ pub struct GithubReleaseResponse {
     pub tarball_url: String,
     pub zipball_url: String,
     pub body: String,
-    
-
 }

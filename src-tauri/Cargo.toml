@@ -28,3 +28,4 @@ ts-rs = "12.0.1"
 rfd = "0.17.2"
 axum = "0.8.9"
 dirs = "6"
+tauri-plugin-log = { version = "2", features = ["colored"] }

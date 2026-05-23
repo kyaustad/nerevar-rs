@@ -5,11 +5,16 @@ pub async fn get_all_releases() -> Result<Vec<GithubReleaseResponse>, String> {
     let client = Client::new();
     let url = "https://api.github.com/repos/tes3mp/tes3mp/releases";
 
-    let response = match client.get(url).header("User-Agent", "Nerevar-0.1.0").send().await {
+    let response = match client
+        .get(url)
+        .header("User-Agent", "Nerevar-0.1.0")
+        .send()
+        .await
+    {
         Ok(res) => res,
         Err(e) => {
             eprintln!("get_all_releases request failed: {e}");
-            return Err(e.to_string())
+            return Err(e.to_string());
         }
     };
 
@@ -24,7 +29,7 @@ pub async fn get_all_releases() -> Result<Vec<GithubReleaseResponse>, String> {
         Ok(releases) => Ok(releases),
         Err(e) => {
             eprintln!("get_all_releases JSON parsing failed: {e}");
-            return Err(e.to_string())
+            return Err(e.to_string());
         }
     }
 }

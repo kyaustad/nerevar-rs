@@ -42,7 +42,9 @@ pub fn load_or_create_nerevar_config_at(config_path: &Path) -> Result<NerevarCon
     serde_json::from_str(&contents).map_err(|e| e.to_string())
 }
 
-pub fn load_or_create_nerevar_config(state: State<'_, Mutex<AppState>>) -> Result<NerevarConfig, String> {
+pub fn load_or_create_nerevar_config(
+    state: State<'_, Mutex<AppState>>,
+) -> Result<NerevarConfig, String> {
     let config_path = state.lock().unwrap().nerevar_config_path.clone();
     load_or_create_nerevar_config_at(Path::new(&config_path))
 }

@@ -11,7 +11,7 @@ import {
 
 import { motion, useReducedMotion } from "motion/react";
 
-import { EmberParticles } from "@/components/custom/ember-particles";
+import { NerevarBackgroundShell } from "@/components/custom/nerevar-background-shell";
 
 import { ThemeSwitcher } from "@/components/custom/theme-switcher";
 
@@ -171,14 +171,8 @@ function HeroSection() {
 function App() {
   return (
     <TooltipProvider>
-      <div className="relative min-h-screen overflow-hidden nerevar-bg text-foreground">
-        <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
-          <div className="ember-fire-glow absolute inset-0" />
-          <EmberParticles />
-          <div className="absolute inset-0 bg-gradient-to-b from-background/25 via-transparent to-background/70" />
-        </div>
-
-        <header className="relative z-10 flex items-center justify-between border-b border-border/60 px-6 py-4">
+      <NerevarBackgroundShell>
+        <header className="flex items-center justify-between border-b border-border/60 px-6 py-4">
           <div className="flex items-center gap-3">
             <div className="flex size-8 items-center justify-center rounded bg-primary font-display text-sm font-bold text-primary-foreground">
               N
@@ -204,7 +198,7 @@ function App() {
           </div>
         </header>
 
-        <main className="relative z-10 mx-auto max-w-5xl px-6 pb-10">
+        <main className="mx-auto max-w-5xl px-6 pb-10">
           <HeroSection />
 
           <section className="grid gap-4 sm:grid-cols-2">
@@ -219,7 +213,7 @@ function App() {
             {INSTANCES.length} instances configured
           </p>
         </main>
-      </div>
+      </NerevarBackgroundShell>
     </TooltipProvider>
   );
 }

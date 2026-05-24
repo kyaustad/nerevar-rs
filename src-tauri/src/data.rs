@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-#[derive(TS, Serialize, Deserialize)]
+#[derive(TS, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct InstanceConfig {
@@ -10,14 +10,13 @@ pub struct InstanceConfig {
     pub root_path: String,
 }
 
-#[derive(TS, Serialize, Deserialize, Default)]
+#[derive(TS, Serialize, Deserialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct NerevarConfig {
     pub onboarding_complete: bool,
     pub instances: Option<Vec<InstanceConfig>>,
     pub root_instance_path: Option<String>,
-    pub base_tes3mp_path: Option<String>,
     pub sync_port: i32,
 }
 
@@ -27,7 +26,6 @@ pub struct NerevarConfig {
 //             onboarding_complete: false,
 //             instances: None,
 //             root_instance_path: None,
-//             base_tes3mp_path: None,
 //             sync_port: 25567,
 //         }
 //     }

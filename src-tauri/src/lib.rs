@@ -13,6 +13,7 @@ use tauri::State;
 
 #[derive(Default)]
 struct AppState {
+    app_handle: Option<tauri::AppHandle>,
     nerevar_config_path: String,
     nerevar_config: NerevarConfig,
 }
@@ -31,6 +32,13 @@ fn load_or_create_nerevar_config(
     config::load_or_create_nerevar_config(state)
 }
 
+#[tauri::command]
+async fn complete_onboarding(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
+    config::complete_onboarding(state)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -41,6 +49,8 @@ pub fn run() {
         )
         .setup(|app| {
             app.manage(Mutex::new(AppState::default()));
+
+            // Set the config path
             app.state::<Mutex<AppState>>()
                 .lock()
                 .unwrap()
@@ -48,21 +58,31 @@ pub fn run() {
                 .expect("Failed to resolve config path")
                 .to_string_lossy()
                 .to_string();
+
             let config = config::load_or_create_nerevar_config(app.state()).unwrap();
+
+            // Set the config
             app.state::<Mutex<AppState>>()
                 .lock()
                 .unwrap()
                 .nerevar_config = config;
 
-            let _ = tauri::async_runtime::spawn(async move {
+            // Set the app Handle
+            app.state::<Mutex<AppState>>().lock().unwrap().app_handle = Some(app.handle().clone());
+
+            config::spawn_config_file_watcher(app.handle().clone());
+
+            let _nerevar_server_task = tauri::async_runtime::spawn(async move {
                 let _ = nerevar_server::start_web_server().await;
             });
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
+        // REGISTER COMMANDS HERE
         .invoke_handler(tauri::generate_handler![
             get_all_releases,
-            load_or_create_nerevar_config
+            load_or_create_nerevar_config,
+            complete_onboarding,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

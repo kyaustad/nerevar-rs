@@ -5,6 +5,5 @@ export type NerevarConfig = {
   onboardingComplete: boolean;
   instances: Array<InstanceConfig> | null;
   rootInstancePath: string | null;
-  baseTes3mpPath: string | null;
   syncPort: number;
 };

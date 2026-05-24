@@ -5,6 +5,7 @@ use tauri::State;
 
 use crate::data::NerevarConfig;
 use crate::AppState;
+use tauri_plugin_log::log::info;
 
 const CONFIG_FILE_NAME: &str = "config.json";
 
@@ -20,6 +21,7 @@ pub fn nerevar_config_file_path() -> Result<PathBuf, String> {
 
 pub fn load_or_create_nerevar_config_at(config_path: &Path) -> Result<NerevarConfig, String> {
     if !config_path.exists() {
+        info!("Creating default config file at {}", config_path.display());
         if let Some(parent) = config_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
@@ -35,10 +37,12 @@ pub fn load_or_create_nerevar_config_at(config_path: &Path) -> Result<NerevarCon
             serde_json::to_string_pretty(&default_config).map_err(|e| e.to_string())?,
         )
         .map_err(|e| e.to_string())?;
+        info!("Default config file created at {}", config_path.display());
         return Ok(default_config);
     }
 
     let contents = std::fs::read_to_string(config_path).map_err(|e| e.to_string())?;
+    info!("Loading config file from {}", config_path.display());
     serde_json::from_str(&contents).map_err(|e| e.to_string())
 }
 

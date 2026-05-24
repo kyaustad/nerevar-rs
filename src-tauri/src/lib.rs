@@ -1,6 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod config;
 mod data;
+mod file_actions;
 mod github_getters;
 mod nerevar_server;
 
@@ -39,6 +40,28 @@ async fn complete_onboarding(state: State<'_, Mutex<AppState>>) -> Result<(), St
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn open_directory_picker() -> Result<String, String> {
+    file_actions::open_directory_picker().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn set_root_instance_path(
+    state: State<'_, Mutex<AppState>>,
+    path: String,
+) -> Result<(), String> {
+    config::set_root_instance_path(state, path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn set_sync_port(state: State<'_, Mutex<AppState>>, port: i32) -> Result<(), String> {
+    config::set_sync_port(state, port)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -70,7 +93,10 @@ pub fn run() {
             // Set the app Handle
             app.state::<Mutex<AppState>>().lock().unwrap().app_handle = Some(app.handle().clone());
 
-            config::spawn_config_file_watcher(app.handle().clone());
+            // DISABLED CONFIG WATCHER FOR NOW AS EVEN INTERNAL CHANGES TRIGGER IT AND WILL
+            // CAUSE UNECESSARY RE-RENDERS IN REACT
+
+            // config::spawn_config_file_watcher(app.handle().clone());
 
             let _nerevar_server_task = tauri::async_runtime::spawn(async move {
                 let _ = nerevar_server::start_web_server().await;
@@ -83,6 +109,9 @@ pub fn run() {
             get_all_releases,
             load_or_create_nerevar_config,
             complete_onboarding,
+            open_directory_picker,
+            set_root_instance_path,
+            set_sync_port,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

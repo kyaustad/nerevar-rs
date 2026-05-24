@@ -9,7 +9,7 @@ export function NerevarBackgroundShell({
   className?: string;
 }) {
   return (
-    <div className="relative min-h-screen overflow-hidden nerevar-bg text-foreground">
+    <div className="relative min-h-full overflow-hidden nerevar-bg text-foreground">
       <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
         <div className="ember-fire-glow absolute inset-0" />
         <EmberParticles />

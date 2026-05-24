@@ -26,9 +26,18 @@ type CardProps = HTMLMotionProps<"div"> & {
   size?: "default" | "sm";
   /** Grid index for staggered entrance */
   index?: number;
+  disableHover?: boolean;
+  disableTap?: boolean;
 };
 
-function Card({ className, size = "default", index = 0, ...props }: CardProps) {
+function Card({
+  className,
+  size = "default",
+  index = 0,
+  disableHover = false,
+  disableTap = false,
+  ...props
+}: CardProps) {
   const reduceMotion = useReducedMotion();
 
   const sharedClassName = cn(
@@ -55,11 +64,15 @@ function Card({ className, size = "default", index = 0, ...props }: CardProps) {
       variants={cardEntrance}
       initial="hidden"
       animate="visible"
-      whileHover={{
-        y: -4,
-        transition: { duration: 0.2, ease: "easeOut" },
-      }}
-      whileTap={{ scale: 0.985 }}
+      whileHover={
+        !disableHover
+          ? {
+              y: -4,
+              transition: { duration: 0.2, ease: "easeOut" },
+            }
+          : {}
+      }
+      whileTap={!disableTap ? { scale: 0.985 } : {}}
       className={sharedClassName}
       {...props}
     />

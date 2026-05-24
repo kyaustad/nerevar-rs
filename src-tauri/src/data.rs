@@ -5,6 +5,7 @@ use ts_rs::TS;
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct InstanceConfig {
+    pub id: String,
     pub name: String,
     pub description: String,
     pub root_path: String,

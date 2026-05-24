@@ -18,11 +18,11 @@ const LABELS: Record<Theme, string> = {
 function ThemeIcon({ theme }: { theme: Theme }) {
   switch (theme) {
     case "light":
-      return <Sun className="size-4" />;
+      return <Sun className="size-4.5" />;
     case "system":
-      return <Monitor className="size-4" />;
+      return <Monitor className="size-4.5" />;
     default:
-      return <Moon className="size-4" />;
+      return <Moon className="size-4.5" />;
   }
 }
 

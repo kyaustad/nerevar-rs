@@ -11,9 +11,12 @@ It needs to:
 */
 
 import { NerevarBackgroundShell } from "@/components/custom/nerevar-background-shell";
-import { Button } from "@/components/ui/button";
 import { useConfig } from "@/features/config/context/config-context-provider";
-import { EmberParticles } from "@/components/custom/ember-particles";
+import {
+  OnboardingFlow,
+  type OnboardingStage,
+} from "@/features/onboarding/components/onboarding-flow";
+import { useState } from "react";
 
 export function OnboardingManager({
   children,
@@ -23,36 +26,33 @@ export function OnboardingManager({
   onComplete: () => void;
 }) {
   const config = useConfig();
+  const [stage, setStage] = useState<OnboardingStage>("select-data-dir");
 
   if (!config) {
     return (
-      <NerevarBackgroundShell className="flex min-h-screen flex-col items-center justify-center gap-4 relative">
-        <EmberParticles /> <p>Loading...</p>
-      </NerevarBackgroundShell>
-    );
-  } else if (config.onboardingComplete) {
-    return (
-      <NerevarBackgroundShell className="flex min-h-screen flex-col items-center justify-center gap-4 relative">
-        <EmberParticles />
-        {children}
-      </NerevarBackgroundShell>
-    );
-  } else {
-    return (
-      <NerevarBackgroundShell className="flex min-h-screen flex-col items-center justify-center gap-4 relative">
-        <EmberParticles />
-        <h1>Onboarding Manager</h1>
-        <p>
-          Config:{" "}
-          {config.onboardingComplete
-            ? "Onboarding Complete"
-            : "Onboarding Incomplete"}
+      <NerevarBackgroundShell className="flex h-full min-h-full flex-col items-center justify-center">
+        <p className="font-display text-xs tracking-[0.25em] text-foreground/60 uppercase animate-pulse">
+          Loading...
         </p>
-        <p>Instances: {config.instances?.length}</p>
-        <p>Root Instance Path: {config.rootInstancePath}</p>
-        <p>Sync Port: {config.syncPort}</p>
-        <Button onClick={onComplete}>Complete Onboarding</Button>
       </NerevarBackgroundShell>
     );
   }
+
+  if (config.onboardingComplete) {
+    return (
+      <NerevarBackgroundShell className="min-h-full">
+        {children}
+      </NerevarBackgroundShell>
+    );
+  }
+
+  return (
+    <NerevarBackgroundShell className="h-full min-h-full">
+      <OnboardingFlow
+        stage={stage}
+        onStageChange={setStage}
+        onFinish={onComplete}
+      />
+    </NerevarBackgroundShell>
+  );
 }

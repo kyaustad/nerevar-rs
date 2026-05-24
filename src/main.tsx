@@ -4,6 +4,7 @@ import { ParticlesProvider } from "@tsparticles/react";
 import App from "./App";
 // import App from "./components/custom/default-showcase";
 import "./App.css";
+import { NerevarTitlebarLayout } from "@/components/custom/nerevar-titlebar";
 import { initParticlesEngine } from "./lib/particles-init";
 import { initTheme } from "./lib/theme";
 import { Toaster } from "@/components/ui/sonner";
@@ -16,18 +17,20 @@ initTheme();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <ParticlesProvider init={initParticlesEngine}>
-      <Toaster richColors />
-      <ConfigContextProvider>
-        <OnboardingManager
-          onComplete={() => {
-            invoke("complete_onboarding");
-            toast.success("Onboarding completed");
-          }}
-        >
-          <App />
-        </OnboardingManager>
-      </ConfigContextProvider>
-    </ParticlesProvider>
+    <NerevarTitlebarLayout>
+      <ParticlesProvider init={initParticlesEngine}>
+        <Toaster richColors />
+        <ConfigContextProvider>
+          <OnboardingManager
+            onComplete={() => {
+              invoke("complete_onboarding");
+              toast.success("Onboarding completed");
+            }}
+          >
+            <App />
+          </OnboardingManager>
+        </ConfigContextProvider>
+      </ParticlesProvider>
+    </NerevarTitlebarLayout>
   </React.StrictMode>,
 );

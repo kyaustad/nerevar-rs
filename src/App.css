@@ -262,6 +262,10 @@
     background: hsl(var(--background));
   }
 
+  [data-tauri-drag-region] {
+    app-region: drag;
+  }
+
   [id^="nerevar-ember-"] {
     z-index: 0;
     width: 100%;

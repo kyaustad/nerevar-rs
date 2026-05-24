@@ -2,11 +2,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use tauri::{AppHandle, Emitter, Manager, State};
-
 use crate::data::NerevarConfig;
 use crate::AppState;
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_log::log::info;
 
 const CONFIG_FILE_NAME: &str = "config.json";
@@ -111,6 +110,7 @@ pub fn spawn_config_file_watcher(app: AppHandle) {
                     }
 
                     let _ = app.emit("on_config_change", config);
+                    info!("Config file changed externally, emitting event and updating app state");
                 },
                 notify::Config::default(),
             )
@@ -128,4 +128,29 @@ pub fn spawn_config_file_watcher(app: AppHandle) {
         })
         .await;
     });
+}
+
+pub async fn set_root_instance_path(
+    state: State<'_, Mutex<AppState>>,
+    path: String,
+) -> Result<(), String> {
+    let mut state = state.lock().unwrap();
+    state.nerevar_config.root_instance_path = Some(path);
+    std::fs::write(
+        Path::new(&state.nerevar_config_path),
+        serde_json::to_string_pretty(&state.nerevar_config).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub async fn set_sync_port(state: State<'_, Mutex<AppState>>, port: i32) -> Result<(), String> {
+    let mut state = state.lock().unwrap();
+    state.nerevar_config.sync_port = port;
+    std::fs::write(
+        Path::new(&state.nerevar_config_path),
+        serde_json::to_string_pretty(&state.nerevar_config).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }

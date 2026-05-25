@@ -239,9 +239,7 @@ function StepActions({
 
 function SelectDataDirStep({ onNext }: { onNext: () => void }) {
   const config = useConfig();
-  const [dataDir, setDataDir] = useState<string>(
-    config?.rootInstancePath || "",
-  );
+  const [dataDir, setDataDir] = useState<string>(config?.rootPath || "");
 
   const handleBrowse = async () => {
     const path = await invoke<string>("open_directory_picker");
@@ -296,7 +294,7 @@ function SelectDataDirStep({ onNext }: { onNext: () => void }) {
       </CardContent>
       <StepActions
         onPrimary={() => {
-          invoke<void>("set_root_instance_path", { path: dataDir })
+          invoke<void>("set_root_path", { path: dataDir })
             .then(() => {
               toast.success("Data directory set");
               onNext();

@@ -2,11 +2,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use crate::data::NerevarConfig;
+use crate::data::{InstanceConfig, NerevarConfig, NewInstanceConfig};
+use crate::github_getters;
+use crate::instance_setup::{
+    apply_server_defaults, create_instance_data_dir, instance_tes3mp_dir,
+};
 use crate::AppState;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_log::log::info;
+use uuid::Uuid;
 
 const CONFIG_FILE_NAME: &str = "config.json";
 
@@ -29,7 +34,7 @@ pub fn load_or_create_nerevar_config_at(config_path: &Path) -> Result<NerevarCon
         let default_config = NerevarConfig {
             onboarding_complete: false,
             instances: None,
-            root_instance_path: None,
+            root_path: None,
             sync_port: 25567,
         };
         std::fs::write(
@@ -130,12 +135,9 @@ pub fn spawn_config_file_watcher(app: AppHandle) {
     });
 }
 
-pub async fn set_root_instance_path(
-    state: State<'_, Mutex<AppState>>,
-    path: String,
-) -> Result<(), String> {
+pub async fn set_root_path(state: State<'_, Mutex<AppState>>, path: String) -> Result<(), String> {
     let mut state = state.lock().unwrap();
-    state.nerevar_config.root_instance_path = Some(path);
+    state.nerevar_config.root_path = Some(path);
     std::fs::write(
         Path::new(&state.nerevar_config_path),
         serde_json::to_string_pretty(&state.nerevar_config).map_err(|e| e.to_string())?,
@@ -152,5 +154,112 @@ pub async fn set_sync_port(state: State<'_, Mutex<AppState>>, port: i32) -> Resu
         serde_json::to_string_pretty(&state.nerevar_config).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn new_instance_id() -> String {
+    Uuid::new_v4().to_string()
+}
+
+fn build_instance_config(new_instance: &NewInstanceConfig) -> InstanceConfig {
+    InstanceConfig {
+        id: new_instance_id(),
+        name: new_instance.instance_name.clone(),
+        description: new_instance.instance_description.clone(),
+        path: new_instance.instance_root_path.clone(),
+    }
+}
+
+fn persist_instance_to_config(
+    state: &State<'_, Mutex<AppState>>,
+    instance: InstanceConfig,
+) -> Result<(NerevarConfig, AppHandle), String> {
+    let mut guard = state
+        .lock()
+        .map_err(|_| "App state lock poisoned".to_string())?;
+
+    match guard.nerevar_config.instances {
+        Some(ref mut instances) => instances.push(instance),
+        None => guard.nerevar_config.instances = Some(vec![instance]),
+    }
+
+    std::fs::write(
+        Path::new(&guard.nerevar_config_path),
+        serde_json::to_string_pretty(&guard.nerevar_config).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+
+    let config = guard.nerevar_config.clone();
+    let app_handle = guard
+        .app_handle
+        .clone()
+        .ok_or_else(|| "App handle not initialized".to_string())?;
+
+    Ok((config, app_handle))
+}
+
+fn cleanup_failed_instance_root(path: &Path) {
+    if path.exists() {
+        if let Err(err) = std::fs::remove_dir_all(path) {
+            info!(
+                "Failed to clean up instance directory at {}: {err}",
+                path.display()
+            );
+        }
+    }
+}
+
+pub async fn add_instance(
+    state: State<'_, Mutex<AppState>>,
+    new_instance: NewInstanceConfig,
+) -> Result<(), String> {
+    let instance_root = Path::new(&new_instance.instance_root_path);
+    if instance_root.exists() {
+        return Err(format!(
+            "Instance path already exists: {}",
+            instance_root.display()
+        ));
+    }
+
+    // Filesystem setup first; only persist config after success.
+    if let Err(err) = (async {
+        std::fs::create_dir_all(instance_root).map_err(|e| e.to_string())?;
+        create_instance_data_dir(instance_root)?;
+
+        let tes3mp_dir = instance_tes3mp_dir(instance_root);
+        std::fs::create_dir_all(&tes3mp_dir).map_err(|e| e.to_string())?;
+
+        github_getters::download_and_extract_release_zip_by_id_to_path(
+            new_instance.release_id.clone(),
+            tes3mp_dir.to_string_lossy().into_owned(),
+        )
+        .await?;
+
+        apply_server_defaults(&tes3mp_dir, &new_instance)?;
+
+        Ok::<(), String>(())
+    })
+    .await
+    {
+        cleanup_failed_instance_root(instance_root);
+        return Err(err);
+    }
+
+    let instance = build_instance_config(&new_instance);
+    let (config, app_handle) = persist_instance_to_config(&state, instance)?;
+
+    app_handle
+        .emit("on_config_added_instance", config.clone())
+        .map_err(|e| e.to_string())?;
+
+    app_handle
+        .emit("on_config_change", config)
+        .map_err(|e| e.to_string())?;
+
+    info!(
+        "Instance '{}' created at {}",
+        new_instance.instance_name, new_instance.instance_root_path
+    );
+
     Ok(())
 }

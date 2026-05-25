@@ -3,10 +3,12 @@ mod config;
 mod data;
 mod file_actions;
 mod github_getters;
+mod instance_setup;
 mod nerevar_server;
 
 use crate::data::GithubReleaseResponse;
 use crate::data::NerevarConfig;
+use crate::data::NewInstanceConfig;
 pub use nerevar_server::start_web_server;
 use std::sync::Mutex;
 use tauri::Manager;
@@ -46,11 +48,8 @@ fn open_directory_picker() -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn set_root_instance_path(
-    state: State<'_, Mutex<AppState>>,
-    path: String,
-) -> Result<(), String> {
-    config::set_root_instance_path(state, path)
+async fn set_root_path(state: State<'_, Mutex<AppState>>, path: String) -> Result<(), String> {
+    config::set_root_path(state, path)
         .await
         .map_err(|e| e.to_string())
 }
@@ -60,6 +59,14 @@ async fn set_sync_port(state: State<'_, Mutex<AppState>>, port: i32) -> Result<(
     config::set_sync_port(state, port)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn add_instance(
+    state: State<'_, Mutex<AppState>>,
+    new_instance: NewInstanceConfig,
+) -> Result<(), String> {
+    config::add_instance(state, new_instance).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -110,8 +117,9 @@ pub fn run() {
             load_or_create_nerevar_config,
             complete_onboarding,
             open_directory_picker,
-            set_root_instance_path,
+            set_root_path,
             set_sync_port,
+            add_instance,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

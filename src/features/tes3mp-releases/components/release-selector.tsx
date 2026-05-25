@@ -29,15 +29,16 @@ function RecommendedBadge({ className }: { className?: string }) {
 }
 
 export function ReleaseSelector({
-  onReleaseChange,
+  value,
+  onValueChange,
 }: {
-  onReleaseChange: (release: GithubReleaseResponse) => void;
+  value: string;
+  onValueChange: (value: string) => void;
 }) {
   const [releases, setReleases] = useState<GithubReleaseResponse[]>([]);
-  const [selectedId, setSelectedId] = useState("");
 
   const selectedRelease = releases.find(
-    (release) => release.id.toString() === selectedId,
+    (release) => release.id.toString() === value,
   );
   const showRecommendedBadge = selectedRelease?.name === RECOMMENDED_RELEASE;
 
@@ -50,12 +51,8 @@ export function ReleaseSelector({
     fetchReleases();
   }, []);
 
-  const handleReleaseChange = (value: string) => {
-    setSelectedId(value);
-    const release = releases.find((release) => release.id.toString() === value);
-    if (release) {
-      onReleaseChange(release);
-    }
+  const handleReleaseChange = (nextValue: string) => {
+    onValueChange(nextValue);
   };
 
   if (releases.length === 0) {
@@ -71,7 +68,7 @@ export function ReleaseSelector({
     );
   }
   return (
-    <Select value={selectedId} onValueChange={handleReleaseChange}>
+    <Select value={value} onValueChange={handleReleaseChange}>
       <SelectTrigger className="flex w-full min-w-full">
         <span className="flex min-w-0 flex-1 items-center justify-between gap-2 pr-1">
           <SelectValue placeholder="Select a release" className="truncate" />
@@ -84,6 +81,7 @@ export function ReleaseSelector({
       >
         {releases.map((release) => (
           <SelectItem
+            disabled={release.name !== RECOMMENDED_RELEASE}
             key={release.id}
             value={release.id.toString()}
             textValue={release.name}

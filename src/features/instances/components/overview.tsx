@@ -19,7 +19,6 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { navigate } from "wouter/use-browser-location";
 
 export function InstancesOverview() {
   const config = useConfig();
@@ -85,7 +84,7 @@ function InstanceCard({ instance }: { instance: InstanceConfig }) {
             </Button>
           </CardAction>
 
-          <CardDescription className="font-serif text-[0.95rem] leading-relaxed text-foreground/75">
+          <CardDescription className="font-serif text-[0.95rem] leading-relaxed text-foreground/75 line-clamp-2 ">
             {instance.description}
           </CardDescription>
         </CardHeader>

@@ -417,7 +417,7 @@
   --elevate-2: rgba(255, 255, 255, 0.09);
 
   /* Morrowind dark theme */
-  --background: 0 28% 5%;
+  --background: hsl(0 28% 5%);
   --foreground: 36 45% 92%;
   --border: 34 22% 24%;
   --input: 34 22% 20%;

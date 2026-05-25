@@ -8,7 +8,21 @@ pub struct InstanceConfig {
     pub id: String,
     pub name: String,
     pub description: String,
-    pub root_path: String,
+    pub path: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct NewInstanceConfig {
+    pub release_id: String,
+    pub instance_name: String,
+    pub instance_description: String,
+    pub instance_root_path: String,
+    pub server_host_name: String,
+    pub max_players: u32,
+    pub server_port: u16,
+    pub password: String,
+    pub master_server_enabled: bool,
 }
 
 #[derive(TS, Serialize, Deserialize, Default, Clone)]
@@ -17,7 +31,7 @@ pub struct InstanceConfig {
 pub struct NerevarConfig {
     pub onboarding_complete: bool,
     pub instances: Option<Vec<InstanceConfig>>,
-    pub root_instance_path: Option<String>,
+    pub root_path: Option<String>,
     pub sync_port: i32,
 }
 

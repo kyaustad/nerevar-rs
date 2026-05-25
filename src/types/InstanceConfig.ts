@@ -4,5 +4,5 @@ export type InstanceConfig = {
   id: string;
   name: string;
   description: string;
-  rootPath: string;
+  path: string;
 };

@@ -1,15 +1,13 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::Duration;
+// use std::time::Duration;
 
 use crate::data::{InstanceConfig, NerevarConfig, NewInstanceConfig};
 use crate::github_getters;
-use crate::instance_setup::{
-    apply_server_defaults, create_instance_data_dir, instance_tes3mp_dir,
-};
+use crate::instance_setup::{apply_server_defaults, create_instance_data_dir, instance_tes3mp_dir};
 use crate::AppState;
-use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use tauri::{AppHandle, Emitter, Manager, State};
+// use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_log::log::info;
 use uuid::Uuid;
 
@@ -33,7 +31,8 @@ pub fn load_or_create_nerevar_config_at(config_path: &Path) -> Result<NerevarCon
         }
         let default_config = NerevarConfig {
             onboarding_complete: false,
-            instances: None,
+            owned_instances: None,
+            synced_instances: None,
             root_path: None,
             sync_port: 25567,
         };
@@ -85,55 +84,55 @@ pub async fn complete_onboarding(state: State<'_, Mutex<AppState>>) -> Result<()
     Ok(())
 }
 
-pub fn spawn_config_file_watcher(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        let config_path = app
-            .state::<Mutex<AppState>>()
-            .lock()
-            .expect("config state poisoned")
-            .nerevar_config_path
-            .clone();
+// pub fn spawn_config_file_watcher(app: AppHandle) {
+//     tauri::async_runtime::spawn(async move {
+//         let config_path = app
+//             .state::<Mutex<AppState>>()
+//             .lock()
+//             .expect("config state poisoned")
+//             .nerevar_config_path
+//             .clone();
 
-        let _ = tauri::async_runtime::spawn_blocking(move || {
-            let path = PathBuf::from(&config_path);
-            let watch_path = path.clone();
+//         let _ = tauri::async_runtime::spawn_blocking(move || {
+//             let path = PathBuf::from(&config_path);
+//             let watch_path = path.clone();
 
-            let mut watcher = RecommendedWatcher::new(
-                move |result: Result<notify::Event, notify::Error>| {
-                    let Ok(event) = result else { return };
-                    if !matches!(event.kind, EventKind::Modify(_)) {
-                        return;
-                    }
+//             let mut watcher = RecommendedWatcher::new(
+//                 move |result: Result<notify::Event, notify::Error>| {
+//                     let Ok(event) = result else { return };
+//                     if !matches!(event.kind, EventKind::Modify(_)) {
+//                         return;
+//                     }
 
-                    let Ok(config) = load_or_create_nerevar_config_at(&watch_path) else {
-                        return;
-                    };
+//                     let Ok(config) = load_or_create_nerevar_config_at(&watch_path) else {
+//                         return;
+//                     };
 
-                    let state = app.state::<Mutex<AppState>>();
-                    if let Ok(mut app_state) = state.lock() {
-                        app_state.nerevar_config = config.clone();
-                    }
+//                     let state = app.state::<Mutex<AppState>>();
+//                     if let Ok(mut app_state) = state.lock() {
+//                         app_state.nerevar_config = config.clone();
+//                     }
 
-                    let _ = app.emit("on_config_change", config);
-                    info!("Config file changed externally, emitting event and updating app state");
-                },
-                notify::Config::default(),
-            )
-            .expect("failed to create config watcher");
+//                     let _ = app.emit("on_config_change", config);
+//                     info!("Config file changed externally, emitting event and updating app state");
+//                 },
+//                 notify::Config::default(),
+//             )
+//             .expect("failed to create config watcher");
 
-            watcher
-                .watch(&path, RecursiveMode::NonRecursive)
-                .expect("failed to watch config file");
+//             watcher
+//                 .watch(&path, RecursiveMode::NonRecursive)
+//                 .expect("failed to watch config file");
 
-            info!("Watching config file at {}", path.display());
+//             info!("Watching config file at {}", path.display());
 
-            loop {
-                std::thread::sleep(Duration::from_secs(3600));
-            }
-        })
-        .await;
-    });
-}
+//             loop {
+//                 std::thread::sleep(Duration::from_secs(3600));
+//             }
+//         })
+//         .await;
+//     });
+// }
 
 pub async fn set_root_path(state: State<'_, Mutex<AppState>>, path: String) -> Result<(), String> {
     let mut state = state.lock().unwrap();
@@ -147,13 +146,27 @@ pub async fn set_root_path(state: State<'_, Mutex<AppState>>, path: String) -> R
 }
 
 pub async fn set_sync_port(state: State<'_, Mutex<AppState>>, port: i32) -> Result<(), String> {
-    let mut state = state.lock().unwrap();
-    state.nerevar_config.sync_port = port;
+    let (config_path, config_snapshot, tx) = {
+        let mut guard = state.lock().unwrap();
+        guard.nerevar_config.sync_port = port;
+        (
+            guard.nerevar_config_path.clone(),
+            guard.nerevar_config.clone(),
+            guard.server_port_tx.clone(),
+        )
+    };
+
+    // Persist config first.
     std::fs::write(
-        Path::new(&state.nerevar_config_path),
-        serde_json::to_string_pretty(&state.nerevar_config).map_err(|e| e.to_string())?,
+        Path::new(&config_path),
+        serde_json::to_string_pretty(&config_snapshot).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
+
+    // Then signal server supervisor (backend-only).
+    if let Some(tx) = tx {
+        let _ = tx.send(port);
+    }
     Ok(())
 }
 
@@ -167,6 +180,8 @@ fn build_instance_config(new_instance: &NewInstanceConfig) -> InstanceConfig {
         name: new_instance.instance_name.clone(),
         description: new_instance.instance_description.clone(),
         path: new_instance.instance_root_path.clone(),
+        is_active: false,
+        data_dir: new_instance.instance_data_dir.clone(),
     }
 }
 
@@ -178,9 +193,9 @@ fn persist_instance_to_config(
         .lock()
         .map_err(|_| "App state lock poisoned".to_string())?;
 
-    match guard.nerevar_config.instances {
-        Some(ref mut instances) => instances.push(instance),
-        None => guard.nerevar_config.instances = Some(vec![instance]),
+    match guard.nerevar_config.owned_instances {
+        Some(ref mut owned_instances) => owned_instances.push(instance),
+        None => guard.nerevar_config.owned_instances = Some(vec![instance]),
     }
 
     std::fs::write(
@@ -224,7 +239,8 @@ pub async fn add_instance(
     // Filesystem setup first; only persist config after success.
     if let Err(err) = (async {
         std::fs::create_dir_all(instance_root).map_err(|e| e.to_string())?;
-        create_instance_data_dir(instance_root)?;
+        let instance_data_dir = Path::new(&new_instance.instance_data_dir);
+        create_instance_data_dir(instance_data_dir)?;
 
         let tes3mp_dir = instance_tes3mp_dir(instance_root);
         std::fs::create_dir_all(&tes3mp_dir).map_err(|e| e.to_string())?;

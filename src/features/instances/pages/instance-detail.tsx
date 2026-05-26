@@ -7,7 +7,7 @@ export function InstanceDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id ?? "unknown";
 
-  const instance = useConfig()?.instances?.find(
+  const instance = useConfig()?.ownedInstances?.find(
     (instance: InstanceConfig) => instance.id === id,
   );
 

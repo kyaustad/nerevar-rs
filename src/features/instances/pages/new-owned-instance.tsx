@@ -22,6 +22,7 @@ import { useEffect } from "react";
 import { Controller, useForm, type FieldErrors } from "react-hook-form";
 import { toast } from "sonner";
 import { navigate } from "wouter/use-browser-location";
+import type { NewInstanceConfig } from "@/types/NewInstanceConfig";
 
 const SECTION_LABEL =
   "text-lg font-light font-display tracking-[0.08em] text-foreground";
@@ -95,6 +96,10 @@ function buildInstanceRootPath(rootPath: string, instanceName: string): string {
   return `${base}\\${folder}`;
 }
 
+function buildInstanceDataDir(rootPath: string, instanceName: string): string {
+  return `${rootPath}\\${instanceName}\\data`;
+}
+
 export function NewInstancePage() {
   const config = useConfig();
 
@@ -103,6 +108,7 @@ export function NewInstancePage() {
     defaultValues: {
       ...newInstanceDefaultValues,
       instanceRootPath: buildInstanceRootPath(config?.rootPath ?? "", ""),
+      instanceDataDir: buildInstanceDataDir(config?.rootPath ?? "", ""),
     },
     mode: "onSubmit",
     reValidateMode: "onChange",
@@ -111,7 +117,7 @@ export function NewInstancePage() {
   useEffect(() => {
     const unlisten = listen("on_config_added_instance", () => {
       toast.success("Instance created successfully");
-      navigate("/");
+      navigate("/owned-instances");
     });
     return () => {
       unlisten.then((unlistenFn) => unlistenFn());
@@ -127,6 +133,11 @@ export function NewInstancePage() {
       buildInstanceRootPath(nerevarRoot, instanceName),
       { shouldValidate: true },
     );
+    form.setValue(
+      "instanceDataDir",
+      buildInstanceDataDir(nerevarRoot, instanceName),
+      { shouldValidate: true },
+    );
   }, [nerevarRoot, instanceName, form]);
 
   const onSubmit = async (data: NewInstanceFormValues) => {
@@ -137,12 +148,13 @@ export function NewInstancePage() {
           instanceName: data.instanceName,
           instanceDescription: data.instanceDescription,
           instanceRootPath: data.instanceRootPath,
+          instanceDataDir: data.instanceDataDir,
           serverHostName: data.serverHostName,
           maxPlayers: data.maxPlayers,
           serverPort: data.serverPort,
           password: data.password,
           masterServerEnabled: data.masterServerEnabled,
-        },
+        } as NewInstanceConfig,
       });
     } catch (error) {
       toast.error(
@@ -189,7 +201,7 @@ export function NewInstancePage() {
                 <InstanceFormField
                   id="new-instance-release"
                   label="TES3MP Release"
-                  description="This is the version of TES3MP that will be used for this instance. The latest non-VR release TES3MP 0.8.1 is recommended."
+                  description="This is the version of TES3MP that will be used for this instance. The latest non-VR release TES3MP 0.8.1 is the only supported release currently. I don't really plan on supporting older releases."
                   invalid={fieldState.invalid}
                   error={fieldState.error}
                 >
@@ -259,6 +271,43 @@ export function NewInstancePage() {
                     disabled
                     aria-invalid={fieldState.invalid}
                   />
+                </InstanceFormField>
+              )}
+            />
+            <Separator className="my-4" />
+            <Controller
+              name="instanceDataDir"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <InstanceFormField
+                  id="new-instance-data-dir"
+                  label="Instance Data Directory"
+                  description="This is the data directory of the instance. It will be where data files such as mods and plugins will be stored and can be seperated from the instance root path to allow for easier storage management. If you used Wabbajack or MO2 to install your mods, you can point this to the 'mods' folder in your installation directory containing the directories for your mods."
+                  invalid={fieldState.invalid}
+                  error={fieldState.error}
+                >
+                  <div className="flex gap-2">
+                    <Input
+                      id="new-instance-data-dir"
+                      readOnly
+                      value={field.value}
+                      onChange={field.onChange}
+                      className="font-mono text-xs bg-input/40"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="shrink-0 font-display text-[0.75rem] tracking-[0.3em] uppercase"
+                      onClick={() =>
+                        invoke<string>("open_directory_picker").then((path) =>
+                          field.onChange(path),
+                        )
+                      }
+                      disabled={isSubmitting}
+                    >
+                      Browse
+                    </Button>
+                  </div>
                 </InstanceFormField>
               )}
             />

@@ -38,7 +38,11 @@ export function OnboardingManager({
     );
   }
 
-  if (config.onboardingComplete) {
+  if (
+    config.onboardingComplete &&
+    config.rootPath &&
+    config.rootPath.length > 0
+  ) {
     return (
       <NerevarBackgroundShell className="min-h-full">
         {children}

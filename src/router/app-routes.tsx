@@ -1,8 +1,30 @@
 import { AppLayout } from "@/app/app-layout";
 import { InstanceDetailPage } from "@/features/instances/pages/instance-detail";
-import { InstancesOverview } from "@/features/instances/components/overview";
-import { Link, Route, Router, Switch } from "wouter";
-import { NewInstancePage } from "@/features/instances/pages/new-instance";
+import {
+  OwnedInstancesOverview,
+  SyncedInstancesOverview,
+} from "@/features/instances/components/overview";
+import { Link, Route, Router, Switch, useLocation } from "wouter";
+import { NewInstancePage } from "@/features/instances/pages/new-owned-instance";
+import { Dashboard } from "@/features/dashboard/components/dashboard";
+import { useEffect, useState } from "react";
+
+const SUBTITLE_OPTIONS = [
+  "What do you want, outlander?",
+  "Wealth beyond measure outlander.",
+  "You like to dance close to the fire, don't you?",
+  "Why walk when you can ride?",
+
+  "I've faught guars more ferocious than you!",
+  "The prey approaches...",
+  "Tell your friends about this place.",
+];
+
+const getRandomSubtitle = (currentSubtitle: string) => {
+  return SUBTITLE_OPTIONS.filter((subtitle) => subtitle !== currentSubtitle)[
+    Math.floor(Math.random() * SUBTITLE_OPTIONS.length)
+  ];
+};
 
 function NotFound() {
   return (
@@ -21,11 +43,21 @@ function NotFound() {
 }
 
 export function AppRoutes() {
+  const [subtitle, setSubtitle] = useState(
+    getRandomSubtitle(SUBTITLE_OPTIONS[2]),
+  );
+  const [pathname] = useLocation();
+
+  useEffect(() => {
+    setSubtitle(getRandomSubtitle(subtitle));
+  }, [pathname]);
   return (
     <Router>
-      <AppLayout>
+      <AppLayout subtitle={subtitle}>
         <Switch>
-          <Route path="/" component={InstancesOverview} />
+          <Route path="/" component={Dashboard} />
+          <Route path="/owned-instances" component={OwnedInstancesOverview} />
+          <Route path="/synced-instances" component={SyncedInstancesOverview} />
           <Route path="/new-instance" component={NewInstancePage} />
           <Route path="/instances/:id" component={InstanceDetailPage} />
           <Route component={NotFound} />

@@ -1,13 +1,8 @@
 mod routes;
 
-use crate::config::nerevar_config::{load_or_create_nerevar_config_at, nerevar_config_file_path};
 use tauri_plugin_log::log::info;
 
-pub async fn start_web_server() -> Result<(), String> {
-    let config_path = nerevar_config_file_path()?;
-    let config = load_or_create_nerevar_config_at(&config_path)?;
-    let port = config.sync_port;
-
+pub async fn start_web_server_on_port(port: i32) -> Result<(), String> {
     let app = routes::router();
     let addr = format!("0.0.0.0:{port}");
     let listener = tokio::net::TcpListener::bind(&addr)

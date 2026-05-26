@@ -10,11 +10,21 @@ pub fn instance_tes3mp_dir(instance_root: &Path) -> PathBuf {
     instance_root.join(INSTANCE_TES3MP_DIR)
 }
 
-pub fn create_instance_data_dir(instance_root: &Path) -> Result<(), String> {
-    let data_dir = instance_root.join("data");
-    std::fs::create_dir_all(&data_dir)
-        .map_err(|e| format!("Failed to create data directory at {}: {e}", data_dir.display()))?;
-    info!("Created instance data directory at {}", data_dir.display());
+pub fn create_instance_data_dir(instance_data_dir: &Path) -> Result<(), String> {
+    if instance_data_dir.exists() {
+        info!("Instance data directory already exists, skipping creation!");
+        return Ok(());
+    }
+    std::fs::create_dir_all(instance_data_dir).map_err(|e| {
+        format!(
+            "Failed to create data directory at {}: {e}",
+            instance_data_dir.display()
+        )
+    })?;
+    info!(
+        "Created instance data directory at {}",
+        instance_data_dir.display()
+    );
     Ok(())
 }
 
@@ -23,13 +33,10 @@ pub fn apply_server_defaults(
     settings: &NewInstanceConfig,
 ) -> Result<(), String> {
     let cfg_path = find_server_defaults_cfg(tes3mp_dir)?;
-    info!(
-        "Applying server defaults to {}",
-        cfg_path.display()
-    );
+    info!("Applying server defaults to {}", cfg_path.display());
 
-    let contents =
-        std::fs::read_to_string(&cfg_path).map_err(|e| format!("Failed to read {}: {e}", cfg_path.display()))?;
+    let contents = std::fs::read_to_string(&cfg_path)
+        .map_err(|e| format!("Failed to read {}: {e}", cfg_path.display()))?;
 
     let updated = patch_server_defaults_cfg(&contents, settings);
 
@@ -45,13 +52,12 @@ fn find_server_defaults_cfg(tes3mp_dir: &Path) -> Result<PathBuf, String> {
         return Ok(direct);
     }
 
-    find_file_by_name(tes3mp_dir, SERVER_DEFAULTS_CFG, 4)
-        .ok_or_else(|| {
-            format!(
-                "Could not find {SERVER_DEFAULTS_CFG} under {}",
-                tes3mp_dir.display()
-            )
-        })
+    find_file_by_name(tes3mp_dir, SERVER_DEFAULTS_CFG, 4).ok_or_else(|| {
+        format!(
+            "Could not find {SERVER_DEFAULTS_CFG} under {}",
+            tes3mp_dir.display()
+        )
+    })
 }
 
 fn find_file_by_name(dir: &Path, file_name: &str, max_depth: u32) -> Option<PathBuf> {
@@ -129,12 +135,8 @@ fn patch_server_defaults_cfg(contents: &str, settings: &NewInstanceConfig) -> St
             (CfgSection::General, "maximumPlayers" | "players") => {
                 Some(format!("maximumPlayers = {}", settings.max_players))
             }
-            (CfgSection::General, "port") => {
-                Some(format!("port = {}", settings.server_port))
-            }
-            (CfgSection::General, "password") => {
-                Some(format!("password = {}", settings.password))
-            }
+            (CfgSection::General, "port") => Some(format!("port = {}", settings.server_port)),
+            (CfgSection::General, "password") => Some(format!("password = {}", settings.password)),
             (CfgSection::MasterServer, "enabled") => Some(format!(
                 "enabled = {}",
                 if settings.master_server_enabled {
@@ -173,6 +175,7 @@ enabled = false
             instance_name: "test".to_string(),
             instance_description: String::new(),
             instance_root_path: String::new(),
+            instance_data_dir: String::new(),
             server_host_name: "Nerevar Server".to_string(),
             max_players: 64,
             server_port: 25570,
@@ -214,6 +217,7 @@ rate = 10000
             instance_name: "test".to_string(),
             instance_description: String::new(),
             instance_root_path: String::new(),
+            instance_data_dir: String::new(),
             server_host_name: "My Server".to_string(),
             max_players: 32,
             server_port: 25570,

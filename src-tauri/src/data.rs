@@ -9,15 +9,19 @@ pub struct InstanceConfig {
     pub name: String,
     pub description: String,
     pub path: String,
+    pub is_active: bool,
+    pub data_dir: String,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct NewInstanceConfig {
     pub release_id: String,
     pub instance_name: String,
     pub instance_description: String,
     pub instance_root_path: String,
+    pub instance_data_dir: String,
     pub server_host_name: String,
     pub max_players: u32,
     pub server_port: u16,
@@ -30,7 +34,8 @@ pub struct NewInstanceConfig {
 #[ts(export)]
 pub struct NerevarConfig {
     pub onboarding_complete: bool,
-    pub instances: Option<Vec<InstanceConfig>>,
+    pub owned_instances: Option<Vec<InstanceConfig>>,
+    pub synced_instances: Option<Vec<InstanceConfig>>,
     pub root_path: Option<String>,
     pub sync_port: i32,
 }

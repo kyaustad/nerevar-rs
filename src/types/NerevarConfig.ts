@@ -3,7 +3,8 @@ import type { InstanceConfig } from "./InstanceConfig";
 
 export type NerevarConfig = {
   onboardingComplete: boolean;
-  instances: Array<InstanceConfig> | null;
+  ownedInstances: Array<InstanceConfig> | null;
+  syncedInstances: Array<InstanceConfig> | null;
   rootPath: string | null;
   syncPort: number;
 };

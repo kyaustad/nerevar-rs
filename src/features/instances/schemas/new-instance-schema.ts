@@ -11,6 +11,7 @@ export const newInstanceSchema = z.object({
     .string()
     .max(500, "Description must be at most 500 characters"),
   instanceRootPath: z.string().min(3, "Instance root path is required"),
+  instanceDataDir: z.string().min(3, "Instance data directory is required"),
   serverHostName: z
     .string()
     .trim()
@@ -37,6 +38,7 @@ export const newInstanceDefaultValues: NewInstanceFormValues = {
   instanceName: "",
   instanceDescription: "",
   instanceRootPath: "",
+  instanceDataDir: "",
   serverHostName: "A Nerevar Server",
   maxPlayers: 64,
   serverPort: 25565,

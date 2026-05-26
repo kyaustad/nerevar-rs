@@ -305,6 +305,7 @@ function SelectDataDirStep({ onNext }: { onNext: () => void }) {
         }}
         primaryLabel="Continue"
         showBack={false}
+        nextDisabled={!dataDir || dataDir.length === 0}
       />
     </OnboardingStepCard>
   );

@@ -9,16 +9,17 @@ mod nerevar_server;
 use crate::data::GithubReleaseResponse;
 use crate::data::NerevarConfig;
 use crate::data::NewInstanceConfig;
-pub use nerevar_server::start_web_server;
 use std::sync::Mutex;
 use tauri::Manager;
 use tauri::State;
+use tokio::sync::watch;
 
 #[derive(Default)]
 struct AppState {
     app_handle: Option<tauri::AppHandle>,
     nerevar_config_path: String,
     nerevar_config: NerevarConfig,
+    server_port_tx: Option<watch::Sender<i32>>,
 }
 
 #[tauri::command]
@@ -105,8 +106,47 @@ pub fn run() {
 
             // config::spawn_config_file_watcher(app.handle().clone());
 
-            let _nerevar_server_task = tauri::async_runtime::spawn(async move {
-                let _ = nerevar_server::start_web_server().await;
+            // Start web server supervisor: it will restart when sync_port changes.
+            let initial_port = app
+                .state::<Mutex<AppState>>()
+                .lock()
+                .unwrap()
+                .nerevar_config
+                .sync_port;
+
+            let (tx, mut rx) = watch::channel(initial_port);
+            app.state::<Mutex<AppState>>()
+                .lock()
+                .unwrap()
+                .server_port_tx = Some(tx);
+
+            tauri::async_runtime::spawn(async move {
+                let mut current_task: Option<tauri::async_runtime::JoinHandle<()>>;
+
+                let start = |port: i32| {
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(err) = nerevar_server::start_web_server_on_port(port).await {
+                            tauri_plugin_log::log::error!(
+                                "NEREVAR SERVER: failed to start on port {port}: {err}"
+                            );
+                        }
+                    })
+                };
+
+                current_task = Some(start(*rx.borrow()));
+
+                while rx.changed().await.is_ok() {
+                    let next_port = *rx.borrow();
+                    tauri_plugin_log::log::info!(
+                        "NEREVAR SERVER: restarting on port {next_port}"
+                    );
+
+                    if let Some(task) = current_task.take() {
+                        task.abort();
+                    }
+
+                    current_task = Some(start(next_port));
+                }
             });
             Ok(())
         })

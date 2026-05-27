@@ -374,7 +374,7 @@ function MorrowindInstallationStep({ onNext }: { onNext: () => void }) {
             </div>
             <Button
               type="button"
-              variant="outline"
+              variant="launch"
               className="shrink-0 h-10 w-full font-display text-[0.75rem] tracking-[0.3em] uppercase hover:disabled:cursor-not-allowed"
               disabled={
                 !morrowindInstallationPath ||

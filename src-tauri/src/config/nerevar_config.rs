@@ -350,7 +350,7 @@ pub async fn generate_default_global_openmw_config(
         std::fs::create_dir_all(&openmw_cfg_path.parent().unwrap()).map_err(|e| e.to_string())?;
         std::fs::write(
             &openmw_cfg_path,
-            format!("encoding=win1252\ndata=\"{}\"", morrowind_installation_path),
+            format!("encoding=win1252\ndata=\"{}\"\ncontent=Morrowind.esm\ncontent=Tribunal.esm\ncontent=Bloodmoon.esm\nfallback-archive=Morrowind.bsa\nfallback-archive=Tribunal.bsa\nfallback-archive=Bloodmoon.bsa", morrowind_installation_path),
         )
         .map_err(|e| e.to_string())?;
     }

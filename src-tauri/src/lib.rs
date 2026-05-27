@@ -5,6 +5,7 @@ mod file_actions;
 mod github_getters;
 mod instance_setup;
 mod nerevar_server;
+mod openmw_ini_importer;
 
 use crate::data::GithubReleaseResponse;
 use crate::data::NerevarConfig;

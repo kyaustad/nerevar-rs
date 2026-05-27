@@ -343,16 +343,41 @@ pub async fn validate_global_openmw_config() -> Result<bool, String> {
 pub async fn generate_default_global_openmw_config(
     morrowind_installation_path: String,
 ) -> Result<(), String> {
+    use crate::openmw_ini_importer::{
+        import_morrowind_ini, quote_data_path, resolve_morrowind_ini, ImportOptions, IniEncoding,
+        MultiStrMap,
+    };
+
     let documents_dir =
         dirs::document_dir().ok_or_else(|| "Failed to resolve documents directory".to_string())?;
     let openmw_cfg_path = Path::new(&documents_dir).join("My Games/OpenMW/openmw.cfg");
-    if !openmw_cfg_path.exists() {
-        std::fs::create_dir_all(&openmw_cfg_path.parent().unwrap()).map_err(|e| e.to_string())?;
-        std::fs::write(
-            &openmw_cfg_path,
-            format!("encoding=win1252\ndata=\"{}\"\ncontent=Morrowind.esm\ncontent=Tribunal.esm\ncontent=Bloodmoon.esm\nfallback-archive=Morrowind.bsa\nfallback-archive=Tribunal.bsa\nfallback-archive=Bloodmoon.bsa", morrowind_installation_path),
-        )
-        .map_err(|e| e.to_string())?;
+    if openmw_cfg_path.exists() {
+        return Ok(());
     }
-    Ok(())
+
+    let data_files_path = Path::new(&morrowind_installation_path);
+    let morrowind_ini = resolve_morrowind_ini(data_files_path).ok_or_else(|| {
+        format!(
+            "Could not find Morrowind.ini near {}",
+            data_files_path.display()
+        )
+    })?;
+
+    let mut seed = MultiStrMap::new();
+    seed.insert("encoding".to_string(), vec!["win1252".to_string()]);
+    seed.insert(
+        "data".to_string(),
+        vec![quote_data_path(data_files_path)],
+    );
+
+    import_morrowind_ini(
+        &morrowind_ini,
+        &openmw_cfg_path,
+        seed,
+        ImportOptions {
+            encoding: IniEncoding::Win1252,
+            import_game_files: true,
+            import_archives: true,
+        },
+    )
 }

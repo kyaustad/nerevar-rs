@@ -2646,6 +2646,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "dirs",
+ "encoding_rs",
  "notify",
  "reqwest",
  "rfd",

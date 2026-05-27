@@ -12,6 +12,7 @@ use tauri_plugin_log::log::info;
 use uuid::Uuid;
 
 const CONFIG_FILE_NAME: &str = "config.json";
+// const TES3MP_081_RELEASE_ID: &str = "65767406";
 
 /// Same path as `app.path().app_data_dir()` / `config.json` (see Tauri `PathResolver::app_data_dir`).
 pub fn nerevar_config_file_path() -> Result<PathBuf, String> {
@@ -277,5 +278,81 @@ pub async fn add_instance(
         new_instance.instance_name, new_instance.instance_root_path
     );
 
+    Ok(())
+}
+
+// pub async fn download_and_run_openmw_wizard(
+//     state: State<'_, Mutex<AppState>>,
+// ) -> Result<(), String> {
+//     // Use const release id to call github_getters::download_and_extract_release_zip_by_id_to_path
+//     // Use the root path + "Base TES3MP" to create the path for the extracted files
+//     // once extracted run openmw-wizard.exe
+//     // once openmw-wizard.exe is done, return Ok(())
+//     // if any error occurs, return Err(String::from("Failed to download and run openmw-wizard"))
+//     let root_path = state
+//         .lock()
+//         .unwrap()
+//         .nerevar_config
+//         .root_path
+//         .clone()
+//         .ok_or_else(|| "Root path not set".to_string())?;
+//     let base_tes3mp_path = Path::new(&root_path).join("Base TES3MP");
+//     std::fs::create_dir_all(&base_tes3mp_path).map_err(|e| e.to_string())?;
+//     github_getters::download_and_extract_release_zip_by_id_to_path(
+//         TES3MP_081_RELEASE_ID.to_string(),
+//         base_tes3mp_path.to_string_lossy().into_owned(),
+//     )
+//     .await?;
+//     let openmw_wizard_path = base_tes3mp_path.join("openmw-wizard.exe");
+//     if !openmw_wizard_path.exists() {
+//         return Err(String::from("Failed to download and run openmw-wizard"));
+//     }
+//     let mut result = std::process::Command::new(openmw_wizard_path)
+//         .spawn()
+//         .map_err(|e| e.to_string())?;
+//     let status = result.wait().map_err(|e| e.to_string())?;
+//     if !status.success() {
+//         return Err(String::from("Failed to run openmw-wizard"));
+//     }
+//     Ok(())
+// }
+
+pub async fn validate_global_openmw_config() -> Result<bool, String> {
+    let documents_dir =
+        dirs::document_dir().ok_or_else(|| "Failed to resolve documents directory".to_string())?;
+    let openmw_cfg_path = Path::new(&documents_dir).join("My Games/OpenMW/openmw.cfg");
+    if !openmw_cfg_path.exists() {
+        info!(
+            "OpenMW config file not found at {}",
+            openmw_cfg_path.display()
+        );
+        return Ok(false);
+    }
+    let contents = std::fs::read_to_string(&openmw_cfg_path).map_err(|e| e.to_string())?;
+    if contents.contains("data=") && contents.contains("Morrowind\\Data Files") {
+        return Ok(true);
+    } else {
+        info!(
+            "OpenMW config file exists but is invalid at {}",
+            openmw_cfg_path.display()
+        );
+        return Ok(false);
+    }
+}
+
+pub async fn generate_default_global_openmw_config(
+    morrowind_installation_path: String,
+) -> Result<(), String> {
+    let documents_dir =
+        dirs::document_dir().ok_or_else(|| "Failed to resolve documents directory".to_string())?;
+    let openmw_cfg_path = Path::new(&documents_dir).join("My Games/OpenMW/openmw.cfg");
+    if !openmw_cfg_path.exists() {
+        std::fs::create_dir_all(&openmw_cfg_path.parent().unwrap()).map_err(|e| e.to_string())?;
+        std::fs::write(
+            &openmw_cfg_path,
+            format!("encoding=win1252\ndata=\"{}\"", morrowind_installation_path),
+        )
+        .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }

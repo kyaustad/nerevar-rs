@@ -6,3 +6,14 @@ pub fn open_directory_picker() -> Result<String, String> {
         None => Err("No directory selected".to_string()),
     }
 }
+
+pub fn open_esm_file_picker() -> Result<String, String> {
+    match FileDialog::new()
+        .add_filter("ESM Files", &["esm"])
+        .set_file_name("Morrowind.esm")
+        .pick_file()
+    {
+        Some(file) => Ok(file.as_path().to_string_lossy().to_string()),
+        None => Err("No file selected".to_string()),
+    }
+}

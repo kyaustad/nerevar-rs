@@ -49,6 +49,11 @@ fn open_directory_picker() -> Result<String, String> {
 }
 
 #[tauri::command]
+fn open_esm_file_picker() -> Result<String, String> {
+    file_actions::open_esm_file_picker().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn set_root_path(state: State<'_, Mutex<AppState>>, path: String) -> Result<(), String> {
     config::set_root_path(state, path)
         .await
@@ -68,6 +73,29 @@ async fn add_instance(
     new_instance: NewInstanceConfig,
 ) -> Result<(), String> {
     config::add_instance(state, new_instance).await
+}
+
+// #[tauri::command]
+// async fn download_and_run_openmw_wizard(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
+//     config::download_and_run_openmw_wizard(state)
+//         .await
+//         .map_err(|e| e.to_string())
+// }
+
+#[tauri::command]
+async fn validate_global_openmw_config() -> Result<bool, String> {
+    config::validate_global_openmw_config()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn generate_default_global_openmw_config(
+    morrowind_installation_path: String,
+) -> Result<(), String> {
+    config::generate_default_global_openmw_config(morrowind_installation_path)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -137,9 +165,7 @@ pub fn run() {
 
                 while rx.changed().await.is_ok() {
                     let next_port = *rx.borrow();
-                    tauri_plugin_log::log::info!(
-                        "NEREVAR SERVER: restarting on port {next_port}"
-                    );
+                    tauri_plugin_log::log::info!("NEREVAR SERVER: restarting on port {next_port}");
 
                     if let Some(task) = current_task.take() {
                         task.abort();
@@ -157,9 +183,12 @@ pub fn run() {
             load_or_create_nerevar_config,
             complete_onboarding,
             open_directory_picker,
+            open_esm_file_picker,
             set_root_path,
             set_sync_port,
             add_instance,
+            validate_global_openmw_config,
+            generate_default_global_openmw_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

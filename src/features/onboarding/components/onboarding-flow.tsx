@@ -23,6 +23,10 @@ import {
   Database,
   Download,
   ShieldCheck,
+  Gamepad2,
+  Loader2,
+  XIcon,
+  CheckCircleIcon,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
@@ -31,11 +35,13 @@ import { toast } from "sonner";
 export type OnboardingStage =
   | "select-data-dir"
   | "select-sync-port"
+  | "morrowind-installation"
   | "tutorial"
   | "complete";
 
 const STAGES: { id: OnboardingStage; label: string }[] = [
   { id: "select-data-dir", label: "Data" },
+  { id: "morrowind-installation", label: "Morrowind" },
   { id: "select-sync-port", label: "Port" },
   { id: "tutorial", label: "Guide" },
   { id: "complete", label: "Done" },
@@ -106,6 +112,9 @@ export function OnboardingFlow({
           >
             {stage === "select-data-dir" && (
               <SelectDataDirStep onNext={goNext} />
+            )}
+            {stage === "morrowind-installation" && (
+              <MorrowindInstallationStep onNext={goNext} />
             )}
             {stage === "select-sync-port" && (
               <SelectSyncPortStep onNext={goNext} onBack={goBack} />
@@ -237,6 +246,156 @@ function StepActions({
   );
 }
 
+function MorrowindInstallationStep({ onNext }: { onNext: () => void }) {
+  const [openMWConfigValid, setOpenMWConfigValid] = useState<boolean>(false);
+  const [hasRunInitialCheck, setHasRunInitialCheck] = useState<boolean>(false);
+  const [morrowindInstallationPath, setMorrowindInstallationPath] =
+    useState<string>("");
+  const reduceMotion = useReducedMotion();
+
+  const handleBrowse = async () => {
+    const path = await invoke<string>("open_esm_file_picker");
+    if (path) {
+      // remove the morrowind.esm from the path to return just the Data Files portion
+      if (path.includes(`\\Morrowind.esm`)) {
+        setMorrowindInstallationPath(path.replace(`\\Morrowind.esm`, ""));
+      } else {
+        toast.error("Selected file is not the Morrowind.esm file");
+      }
+    } else {
+      toast.error("No file selected");
+    }
+  };
+
+  const validateOpenMWConfig = async () => {
+    const validationResults = await invoke<boolean>(
+      "validate_global_openmw_config",
+    );
+    if (validationResults) {
+      setOpenMWConfigValid(true);
+    } else {
+      setOpenMWConfigValid(false);
+    }
+  };
+
+  const handleGenerateDefaultOpenMWConfig = async () => {
+    invoke<void>("generate_default_global_openmw_config", {
+      morrowindInstallationPath,
+    })
+      .then(() => {
+        toast.success("Default OpenMW config generated");
+        validateOpenMWConfig();
+      })
+      .catch((error) => {
+        toast.error(`Failed to generate default OpenMW config: ${error}`);
+      });
+  };
+
+  useEffect(() => {
+    if (!hasRunInitialCheck) {
+      validateOpenMWConfig();
+    }
+  }, []);
+
+  return (
+    <OnboardingStepCard>
+      <CardHeader className="border-b border-border/50 px-6 pb-4 pt-6">
+        <div className="mb-3 flex size-10 items-center justify-center rounded-lg border border-accent/40 bg-accent/10 text-accent">
+          <Gamepad2 className="size-5" />
+        </div>
+        <CardTitle className="font-display text-base font-bold tracking-[0.2em] text-accent uppercase">
+          Locate Morrowind Installation
+        </CardTitle>
+        <CardDescription className="font-serif text-base font-light tracking-[0.05em] leading-relaxed text-foreground/75">
+          {`If you have launched or installed OpenMW before, you should have the needed`}
+          <code className="font-mono text-sm text-accent bg-secondary/70 p-1 whitespace-nowrap">
+            OpenMW.cfg
+          </code>
+          {` file in your`}
+          <code className="font-mono text-sm text-accent bg-secondary/70 p-1 whitespace-nowrap">
+            {`Documents\\My Games\\OpenMW`}
+          </code>
+          {` folder. If that file doesn't exist, Nerevar will create a default one for you using your Morrowind Installation location.`}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4 px-6 py-5">
+        {openMWConfigValid ? (
+          <div className="flex flex-col items-center gap-8">
+            <div className="flex flex-row items-center w-full justify-center gap-4 rounded-lg border border-border/50 bg-background/30 p-4">
+              <motion.div
+                initial={reduceMotion ? false : { scale: 0.85, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.35, ease: EASE }}
+                className="mb-5 flex size-16 items-center justify-center rounded-full border border-accent/40 bg-primary/15 text-destructive animate-pulse transition-all duration-1000 ease-in-out"
+              >
+                <CheckCircleIcon
+                  className="size-8 text-emerald-500"
+                  strokeWidth={2}
+                />
+              </motion.div>
+              <p className="text-sm text-accent max-w-xs text-center">{`Your OpenMW config appears to be valid! You can continue to the next step.`}</p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-8">
+            <div className="flex flex-row items-center w-full justify-center gap-4 rounded-lg border border-border/50 bg-background/30 p-4">
+              <motion.div
+                initial={reduceMotion ? false : { scale: 0.85, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.35, ease: EASE }}
+                className="mb-5 flex size-16 items-center justify-center rounded-full border border-accent/40 bg-primary/15 text-destructive animate-pulse transition-all duration-1000 ease-in-out"
+              >
+                <XIcon className="size-8 text-destructive" strokeWidth={2} />
+              </motion.div>
+              <p className="text-sm text-accent max-w-xs text-center">{`OpenMW config is invalid or missing. Nerevar will generate a default one for you.`}</p>
+            </div>
+            <Label
+              htmlFor="morrowind-installation-path"
+              className="text-xl font-display text-foreground"
+            >
+              Find your Morrowind.esm file for Nerevar
+            </Label>
+            <div className="flex gap-2 w-full">
+              <Input
+                id="morrowind-installation-path"
+                readOnly
+                placeholder="C:\Program Files (x86)\Steam\steamapps\common\Morrowind\Data Files"
+                value={morrowindInstallationPath}
+                className="font-mono text-xs bg-input/40 truncate"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                className="shrink-0 font-display text-[0.75rem] tracking-[0.3em] uppercase"
+                onClick={handleBrowse}
+              >
+                Browse
+              </Button>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="shrink-0 h-10 w-full font-display text-[0.75rem] tracking-[0.3em] uppercase hover:disabled:cursor-not-allowed"
+              disabled={
+                !morrowindInstallationPath ||
+                morrowindInstallationPath.length === 0
+              }
+              onClick={handleGenerateDefaultOpenMWConfig}
+            >
+              Generate Default Config
+            </Button>
+          </div>
+        )}
+      </CardContent>
+      <StepActions
+        onPrimary={onNext}
+        primaryLabel="Continue"
+        showBack={false}
+        nextDisabled={!openMWConfigValid}
+      />
+    </OnboardingStepCard>
+  );
+}
 function SelectDataDirStep({ onNext }: { onNext: () => void }) {
   const config = useConfig();
   const [dataDir, setDataDir] = useState<string>(config?.rootPath || "");

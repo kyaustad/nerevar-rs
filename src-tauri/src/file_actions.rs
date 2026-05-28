@@ -17,3 +17,10 @@ pub fn open_esm_file_picker() -> Result<String, String> {
         None => Err("No file selected".to_string()),
     }
 }
+
+pub fn open_directory(path: String) -> Result<(), String> {
+    match opener::open(&path) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}

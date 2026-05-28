@@ -365,10 +365,7 @@ pub async fn generate_default_global_openmw_config(
 
     let mut seed = MultiStrMap::new();
     seed.insert("encoding".to_string(), vec!["win1252".to_string()]);
-    seed.insert(
-        "data".to_string(),
-        vec![quote_data_path(data_files_path)],
-    );
+    seed.insert("data".to_string(), vec![quote_data_path(data_files_path)]);
 
     import_morrowind_ini(
         &morrowind_ini,

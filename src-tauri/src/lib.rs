@@ -55,6 +55,11 @@ fn open_esm_file_picker() -> Result<String, String> {
 }
 
 #[tauri::command]
+fn open_directory(path: String) -> Result<(), String> {
+    file_actions::open_directory(path.to_string()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn set_root_path(state: State<'_, Mutex<AppState>>, path: String) -> Result<(), String> {
     config::set_root_path(state, path)
         .await
@@ -185,6 +190,7 @@ pub fn run() {
             complete_onboarding,
             open_directory_picker,
             open_esm_file_picker,
+            open_directory,
             set_root_path,
             set_sync_port,
             add_instance,

@@ -22,7 +22,7 @@ import { useEffect } from "react";
 import { Controller, useForm, type FieldErrors } from "react-hook-form";
 import { toast } from "sonner";
 import { navigate } from "wouter/use-browser-location";
-import type { NewInstanceConfig } from "@/types/NewInstanceConfig";
+import type { NewInstanceConfig } from "@/types";
 
 const SECTION_LABEL =
   "text-lg font-light font-display tracking-[0.08em] text-foreground";

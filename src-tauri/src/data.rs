@@ -9,7 +9,6 @@ pub struct InstanceConfig {
     pub name: String,
     pub description: String,
     pub path: String,
-    pub is_active: bool,
     pub data_dir: String,
 }
 

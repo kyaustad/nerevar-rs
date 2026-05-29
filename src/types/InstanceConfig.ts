@@ -5,6 +5,5 @@ export type InstanceConfig = {
   name: string;
   description: string;
   path: string;
-  isActive: boolean;
   dataDir: string;
 };

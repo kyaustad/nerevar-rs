@@ -181,7 +181,6 @@ fn build_instance_config(new_instance: &NewInstanceConfig) -> InstanceConfig {
         name: new_instance.instance_name.clone(),
         description: new_instance.instance_description.clone(),
         path: new_instance.instance_root_path.clone(),
-        is_active: false,
         data_dir: new_instance.instance_data_dir.clone(),
     }
 }

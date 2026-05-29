@@ -1,8 +1,51 @@
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { useConfig } from "@/features/config/context/config-context-provider";
+import { cn } from "@/lib/utils";
 import { InstanceConfig } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  ArrowLeft,
+  FolderOpen,
+  Network,
+  Play,
+  Server,
+  Settings,
+  Settings2,
+} from "lucide-react";
+import type { ReactNode } from "react";
 import { Link, useParams } from "wouter";
+
+const detailCardClass =
+  "gap-0 border-border/80 bg-card/70 py-0 shadow-[0_0_15px_hsl(var(--accent)/0.08)] ring-1 ring-accent/20";
+
+function placeholderActivateNerevarSync(instanceId: string) {
+  console.log("[nerevar] activate nerevar syncing", { instanceId });
+}
+
+function placeholderLaunchClient(instanceId: string) {
+  console.log("[nerevar] launch client", { instanceId });
+}
+
+function placeholderLaunchServer(instanceId: string) {
+  console.log("[nerevar] launch server", { instanceId });
+}
+
+function placeholderConnectToSync(instanceId: string) {
+  console.log("[nerevar] connect to nerevar sync", { instanceId });
+}
+
+function placeholderOpenDataManager(instanceId: string) {
+  console.log("[nerevar] open data manager", { instanceId });
+}
 
 export function InstanceDetailPage() {
   const params = useParams<{ id: string }>();
@@ -22,69 +65,271 @@ export function InstanceDetailPage() {
 
   if (!instance) {
     return (
-      <div className="flex flex-col items-center gap-6 py-8 text-center">
+      <div className="mx-auto flex w-full max-w-lg flex-col items-center gap-6 py-12 text-center">
         <p className="font-display text-sm tracking-[0.15em] text-accent uppercase">
           Instance not found
         </p>
+        <Button variant="outline" asChild>
+          <Link href="/">Back to dashboard</Link>
+        </Button>
       </div>
     );
   }
 
   if (type === "owned") {
     return <OwnedInstanceDetail instance={instance} />;
-  } else {
-    return <SyncedInstanceDetail instance={instance} />;
   }
+
+  return <SyncedInstanceDetail instance={instance} />;
+}
+
+function InstanceDetailShell({
+  backHref,
+  backLabel,
+  kindLabel,
+  instance,
+  children,
+}: {
+  backHref: string;
+  backLabel: string;
+  kindLabel: string;
+  instance: InstanceConfig;
+  children: ReactNode;
+}) {
+  return (
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-1 pb-8">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="w-fit font-display text-sm tracking-[0.2em] text-foreground/70 uppercase hover:text-accent"
+        asChild
+      >
+        <Link href={backHref}>
+          <ArrowLeft data-icon="inline-start" />
+          {backLabel}
+        </Link>
+      </Button>
+
+      <Card className={detailCardClass}>
+        <CardHeader className="border-b border-border/50 space-y-3 pb-4 pt-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant="outline"
+              className="border-accent/40 font-display text-[0.7rem] tracking-[0.15em] text-accent uppercase"
+            >
+              {kindLabel}
+            </Badge>
+            <Badge
+              // Once active instances are implemented, change this to use the instance's active state
+              variant={false ? "default" : "secondary"}
+              className="font-display text-[0.7rem] tracking-[0.15em] uppercase"
+            >
+              {false ? "Active" : "Inactive"}
+            </Badge>
+          </div>
+          <CardTitle className="font-display text-3xl tracking-[0.08em] text-gradient-gold">
+            {instance.name}
+          </CardTitle>
+          <CardDescription className="font-serif text-left text-[1rem] leading-relaxed text-foreground/75">
+            {instance.description || "No description provided."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-5 py-5">
+          {children}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function DetailSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="flex flex-col gap-3">
+      <div>
+        <h3 className="font-display text-lg tracking-[0.15em] text-accent uppercase">
+          {title}
+        </h3>
+        {description ? (
+          <p className="mt-1 font-serif text-base leading-relaxed tracking-[0.03em] text-foreground/65">
+            {description}
+          </p>
+        ) : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function PathRow({ label, path }: { label: string; path: string }) {
+  return (
+    <div className="flex flex-col gap-1 rounded-lg border border-border/50 bg-background/30 px-3 py-2 text-left">
+      <span className="font-display text-[0.7rem] tracking-[0.15em] text-foreground/55 uppercase">
+        {label}
+      </span>
+      <code className="truncate font-mono text-[0.8rem] text-foreground/80">
+        {path}
+      </code>
+    </div>
+  );
 }
 
 function OwnedInstanceDetail({ instance }: { instance: InstanceConfig }) {
   return (
-    <div className="flex flex-col items-center gap-6 py-8 text-center">
-      <p className="font-display text-sm tracking-[0.15em] text-accent uppercase">
-        Owned Instance
-      </p>
-      <h2 className="font-display text-2xl tracking-[0.08em] text-gradient-gold">
-        {instance?.name}
-      </h2>
-      <p className="max-w-md font-serif text-sm leading-relaxed text-foreground/70">
-        {instance.description || "No description"}
-      </p>
-      <Button
-        variant="outline"
-        onClick={() => invoke<void>("open_directory", { path: instance.path })}
+    <InstanceDetailShell
+      backHref="/owned-instances"
+      backLabel="Owned instances"
+      kindLabel="Owned"
+      instance={instance}
+    >
+      <DetailSection
+        title="Play"
+        description="Launch TES3MP for this instance."
       >
-        Open Instance Directory
-      </Button>
-      <Button
-        variant="outline"
-        onClick={() =>
-          invoke<void>("open_directory", { path: instance.dataDir })
-        }
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Button
+            variant="launch"
+            className="h-10 w-full text-base"
+            onClick={() => placeholderLaunchClient(instance.id)}
+          >
+            <Play data-icon="inline-start" />
+            Launch client
+          </Button>
+          <Button
+            variant="server"
+            className="h-10 w-full text-base"
+            onClick={() => placeholderLaunchServer(instance.id)}
+          >
+            <Server data-icon="inline-start" />
+            Launch server
+          </Button>
+        </div>
+      </DetailSection>
+
+      <Separator className="bg-border/60" />
+
+      <DetailSection
+        title="Nerevar sync"
+        description="Share mods and settings with connected players."
       >
-        Open Data Directory
-      </Button>
-      <Button variant="outline" asChild>
-        <Link href="/">Back to instances</Link>
-      </Button>
-    </div>
+        <Button
+          variant="outline"
+          className={cn(
+            "h-10 w-full font-display text-base tracking-[0.15em] uppercase",
+            "border-accent/40 hover:border-accent/60 hover:bg-accent/5",
+          )}
+          onClick={() => placeholderActivateNerevarSync(instance.id)}
+        >
+          <Network data-icon="inline-start" />
+          Activate Nerevar syncing
+        </Button>
+        <Button
+          variant="secondary"
+          className={cn(
+            "h-10 w-full font-display text-base tracking-[0.15em] uppercase",
+            "border-accent/40 hover:border-accent/60 hover:bg-accent/5",
+          )}
+          onClick={() => placeholderOpenDataManager(instance.id)}
+        >
+          <Settings2 data-icon="inline-start" />
+          Open Data Manager
+        </Button>
+      </DetailSection>
+
+      <Separator className="bg-border/60" />
+
+      <DetailSection
+        title="Directories"
+        description="Open instance folders on disk."
+      >
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Button
+            variant="outline"
+            className="h-10 w-full font-display text-base tracking-[0.15em] uppercase"
+            onClick={() =>
+              invoke<void>("open_directory", { path: instance.path })
+            }
+          >
+            <FolderOpen data-icon="inline-start" />
+            Instance folder
+          </Button>
+          <Button
+            variant="outline"
+            className="h-10 w-full font-display text-base tracking-[0.15em] uppercase"
+            onClick={() =>
+              invoke<void>("open_directory", { path: instance.dataDir })
+            }
+          >
+            <FolderOpen data-icon="inline-start" />
+            Data folder
+          </Button>
+        </div>
+        <div className="flex flex-col gap-2">
+          <PathRow label="Instance path" path={instance.path} />
+          <PathRow label="Data path" path={instance.dataDir} />
+        </div>
+      </DetailSection>
+    </InstanceDetailShell>
   );
 }
 
 function SyncedInstanceDetail({ instance }: { instance: InstanceConfig }) {
   return (
-    <div className="flex flex-col items-center gap-6 py-8 text-center">
-      <p className="font-display text-sm tracking-[0.15em] text-accent uppercase">
-        Synced Instance
-      </p>
-      <h2 className="font-display text-2xl tracking-[0.08em] text-gradient-gold">
-        {instance?.name}
-      </h2>
-      <p className="max-w-md font-serif text-sm leading-relaxed text-foreground/70">
-        {instance.description || "No description"}
-      </p>
-      <Button variant="outline" asChild>
-        <Link href="/">Back to instances</Link>
-      </Button>
-    </div>
+    <InstanceDetailShell
+      backHref="/synced-instances"
+      backLabel="Synced instances"
+      kindLabel="Synced"
+      instance={instance}
+    >
+      <DetailSection
+        title="Play"
+        description="Join this synced session in TES3MP."
+      >
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Button
+            variant="launch"
+            className="h-10 w-full"
+            onClick={() => placeholderLaunchClient(instance.id)}
+          >
+            <Play data-icon="inline-start" />
+            Launch client
+          </Button>
+          <Button
+            variant="server"
+            className="h-10 w-full"
+            onClick={() => placeholderLaunchServer(instance.id)}
+          >
+            <Server data-icon="inline-start" />
+            Launch server
+          </Button>
+        </div>
+      </DetailSection>
+
+      <Separator className="bg-border/60" />
+
+      <DetailSection
+        title="Connection"
+        description="Manage your link to this Nerevar server."
+      >
+        <Button
+          variant="outline"
+          className={cn(
+            "h-10 w-full font-display text-base tracking-[0.15em] uppercase",
+            "border-accent/40 hover:border-accent/60 hover:bg-accent/5",
+          )}
+          onClick={() => placeholderConnectToSync(instance.id)}
+        >
+          <Network data-icon="inline-start" />
+          Connect to Nerevar sync
+        </Button>
+      </DetailSection>
+    </InstanceDetailShell>
   );
 }

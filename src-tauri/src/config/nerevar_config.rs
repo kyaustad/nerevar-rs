@@ -2,8 +2,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 // use std::time::Duration;
 
-use crate::data::{InstanceConfig, NerevarConfig, NewInstanceConfig};
+use crate::data::{InstanceConfig, NerevarConfig, NewConnectionConfig, NewInstanceConfig};
 use crate::github_getters;
+use crate::instance_data::ensure_instance_data_layout;
 use crate::instance_setup::{apply_server_defaults, create_instance_data_dir, instance_tes3mp_dir};
 use crate::AppState;
 // use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
@@ -182,10 +183,30 @@ fn build_instance_config(new_instance: &NewInstanceConfig) -> InstanceConfig {
         description: new_instance.instance_description.clone(),
         path: new_instance.instance_root_path.clone(),
         data_dir: new_instance.instance_data_dir.clone(),
+        release_id: Some(new_instance.release_id.clone()),
+        remote_host: None,
+        remote_sync_port: None,
+        last_synced_at: None,
+        tes3mp_server_port: None,
     }
 }
 
-fn persist_instance_to_config(
+pub fn build_synced_instance_config(new_connection: &NewConnectionConfig) -> InstanceConfig {
+    InstanceConfig {
+        id: new_instance_id(),
+        name: new_connection.connection_name.clone(),
+        description: new_connection.connection_description.clone(),
+        path: new_connection.instance_root_path.clone(),
+        data_dir: new_connection.instance_data_dir.clone(),
+        release_id: Some(new_connection.release_id.clone()),
+        remote_host: Some(new_connection.remote_host.clone()),
+        remote_sync_port: Some(new_connection.remote_sync_port),
+        last_synced_at: None,
+        tes3mp_server_port: None,
+    }
+}
+
+fn persist_owned_instance_to_config(
     state: &State<'_, Mutex<AppState>>,
     instance: InstanceConfig,
 ) -> Result<(NerevarConfig, AppHandle), String> {
@@ -211,6 +232,63 @@ fn persist_instance_to_config(
         .ok_or_else(|| "App handle not initialized".to_string())?;
 
     Ok((config, app_handle))
+}
+
+pub fn persist_synced_instance_to_config(
+    state: &State<'_, Mutex<AppState>>,
+    instance: InstanceConfig,
+) -> Result<(NerevarConfig, AppHandle), String> {
+    let mut guard = state
+        .lock()
+        .map_err(|_| "App state lock poisoned".to_string())?;
+
+    match guard.nerevar_config.synced_instances {
+        Some(ref mut synced_instances) => synced_instances.push(instance),
+        None => guard.nerevar_config.synced_instances = Some(vec![instance]),
+    }
+
+    std::fs::write(
+        Path::new(&guard.nerevar_config_path),
+        serde_json::to_string_pretty(&guard.nerevar_config).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+
+    let config = guard.nerevar_config.clone();
+    let app_handle = guard
+        .app_handle
+        .clone()
+        .ok_or_else(|| "App handle not initialized".to_string())?;
+
+    Ok((config, app_handle))
+}
+
+pub fn update_synced_instance(
+    state: &State<'_, Mutex<AppState>>,
+    instance: InstanceConfig,
+) -> Result<NerevarConfig, String> {
+    let mut guard = state
+        .lock()
+        .map_err(|_| "App state lock poisoned".to_string())?;
+
+    let synced = guard
+        .nerevar_config
+        .synced_instances
+        .as_mut()
+        .ok_or_else(|| "No synced instances configured".to_string())?;
+
+    let entry = synced
+        .iter_mut()
+        .find(|i| i.id == instance.id)
+        .ok_or_else(|| format!("Synced instance not found: {}", instance.id))?;
+    *entry = instance;
+
+    std::fs::write(
+        Path::new(&guard.nerevar_config_path),
+        serde_json::to_string_pretty(&guard.nerevar_config).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(guard.nerevar_config.clone())
 }
 
 fn cleanup_failed_instance_root(path: &Path) {
@@ -241,6 +319,7 @@ pub async fn add_instance(
         std::fs::create_dir_all(instance_root).map_err(|e| e.to_string())?;
         let instance_data_dir = Path::new(&new_instance.instance_data_dir);
         create_instance_data_dir(instance_data_dir)?;
+        ensure_instance_data_layout(instance_data_dir)?;
 
         let tes3mp_dir = instance_tes3mp_dir(instance_root);
         std::fs::create_dir_all(&tes3mp_dir).map_err(|e| e.to_string())?;
@@ -262,7 +341,7 @@ pub async fn add_instance(
     }
 
     let instance = build_instance_config(&new_instance);
-    let (config, app_handle) = persist_instance_to_config(&state, instance)?;
+    let (config, app_handle) = persist_owned_instance_to_config(&state, instance)?;
 
     app_handle
         .emit("on_config_added_instance", config.clone())

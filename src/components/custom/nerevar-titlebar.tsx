@@ -3,6 +3,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, X } from "lucide-react";
 import { ThemeSwitcher } from "./theme-switcher";
+import { SyncHostStatusBar } from "./sync-host-status-bar";
 import { TooltipProvider } from "../ui/tooltip";
 
 export function NerevarTitlebarLayout({
@@ -13,6 +14,7 @@ export function NerevarTitlebarLayout({
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
       <NerevarTitlebar />
+      <SyncHostStatusBar />
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
     </div>
   );

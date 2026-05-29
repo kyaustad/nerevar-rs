@@ -385,6 +385,170 @@ pub fn quote_data_path(path: &Path) -> String {
     }
 }
 
+fn global_openmw_cfg_path(documents_dir: &Path) -> PathBuf {
+    documents_dir.join("My Games/OpenMW/openmw.cfg")
+}
+
+pub fn resolve_global_openmw_cfg_path() -> Option<PathBuf> {
+    dirs::document_dir().map(|dir| global_openmw_cfg_path(&dir))
+}
+
+/// First `data=` path from the user's global OpenMW config, if present.
+pub fn read_first_global_data_path() -> Option<String> {
+    let path = resolve_global_openmw_cfg_path()?;
+    if !path.exists() {
+        return None;
+    }
+    let cfg = load_cfg_file(&path).ok()?;
+    cfg.get("data").and_then(|values| values.first().cloned())
+}
+
+/// Whether the user's global OpenMW config lists plugins via explicit `content=` lines.
+pub fn global_openmw_cfg_has_explicit_content() -> bool {
+    let Some(path) = resolve_global_openmw_cfg_path() else {
+        return false;
+    };
+    if !path.is_file() {
+        return false;
+    }
+    let Ok(cfg) = load_cfg_file(&path) else {
+        return false;
+    };
+    cfg.get("content").is_some_and(|values| !values.is_empty())
+}
+
+const GLOBAL_CONTENT_PATCH_MARKER: &str = "# Nerevar temporarily disabled for TES3MP launch:";
+
+pub struct GlobalOpenMwLaunchPatch {
+    path: PathBuf,
+    original: String,
+}
+
+pub fn begin_global_openmw_launch_patch() -> Result<Option<GlobalOpenMwLaunchPatch>, String> {
+    if !global_openmw_cfg_has_explicit_content() {
+        return Ok(None);
+    }
+
+    let path = resolve_global_openmw_cfg_path()
+        .ok_or_else(|| "Could not resolve global OpenMW config path".to_string())?;
+    let original = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    let stripped = disable_content_lines(&original);
+    std::fs::write(&path, stripped).map_err(|e| {
+        format!(
+            "Failed to patch global OpenMW config at {}: {e}",
+            path.display()
+        )
+    })?;
+
+    Ok(Some(GlobalOpenMwLaunchPatch { path, original }))
+}
+
+pub fn restore_global_openmw_launch_patch(patch: GlobalOpenMwLaunchPatch) -> Result<(), String> {
+    std::fs::write(&patch.path, patch.original).map_err(|e| {
+        format!(
+            "Failed to restore global OpenMW config at {}: {e}",
+            patch.path.display()
+        )
+    })
+}
+
+fn disable_content_lines(contents: &str) -> String {
+    let mut out = String::new();
+    for line in contents.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') || trimmed.is_empty() {
+            out.push_str(line);
+        } else {
+            let key = trimmed.split('=').next().unwrap_or("").trim();
+            if key.eq_ignore_ascii_case("content") {
+                out.push_str(GLOBAL_CONTENT_PATCH_MARKER);
+                out.push(' ');
+            }
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    if !contents.ends_with('\n') && out.ends_with('\n') {
+        out.pop();
+    }
+    out
+}
+
+/// Find a plugin file under one or more `data=` paths (searches subdirectories).
+pub fn find_plugin_in_data_paths(
+    data_paths: &[PathBuf],
+    plugin_name: &str,
+) -> Option<PathBuf> {
+    for data_path in data_paths.iter().rev() {
+        if let Some(found) = find_plugin_file_recursive(data_path, plugin_name) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn find_plugin_file_recursive(dir: &Path, file_name: &str) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            if path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.eq_ignore_ascii_case(file_name))
+            {
+                return Some(path);
+            }
+        } else if path.is_dir() {
+            if let Some(found) = find_plugin_file_recursive(&path, file_name) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+/// Sort plugin filenames by file timestamp and master dependencies (OpenMW ini importer rules).
+pub fn sort_content_plugins(
+    data_paths: &[PathBuf],
+    plugin_names: &[String],
+) -> Result<Vec<String>, String> {
+    let mut content_files: Vec<(SystemTime, PathBuf)> = Vec::new();
+    for name in plugin_names {
+        let ext = name
+            .get(name.len().saturating_sub(3)..)
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if ext != "esm" && ext != "esp" {
+            continue;
+        }
+
+        if let Some(path) = find_plugin_in_data_paths(data_paths, name) {
+            if let Some(time) = last_write_time(&path) {
+                content_files.push((time, path));
+            }
+        }
+    }
+
+    content_files.sort_by_key(|(time, _)| *time);
+
+    let mut unsorted: Vec<(String, Vec<String>)> = Vec::new();
+    for (_, path) in &content_files {
+        let masters = esm_header::read_master_dependencies(path).map_err(|e| e.to_string())?;
+        let filename = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+        unsorted.push((filename, masters));
+    }
+
+    let mut sorted = dependency_sort(unsorted);
+    fix_tribunal_bloodmoon_order(&mut sorted);
+    Ok(sorted)
+}
+
 /// Resolve `Morrowind.ini` from a Data Files directory (onboarding stores Data Files path).
 pub fn resolve_morrowind_ini(data_files_path: &Path) -> Option<PathBuf> {
     let in_data = data_files_path.join("Morrowind.ini");

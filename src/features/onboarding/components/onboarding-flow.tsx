@@ -24,7 +24,6 @@ import {
   Download,
   ShieldCheck,
   Gamepad2,
-  Loader2,
   XIcon,
   CheckCircleIcon,
 } from "lucide-react";
@@ -248,7 +247,7 @@ function StepActions({
 
 function MorrowindInstallationStep({ onNext }: { onNext: () => void }) {
   const [openMWConfigValid, setOpenMWConfigValid] = useState<boolean>(false);
-  const [hasRunInitialCheck, setHasRunInitialCheck] = useState<boolean>(false);
+  const [hasRunInitialCheck] = useState<boolean>(false);
   const [morrowindInstallationPath, setMorrowindInstallationPath] =
     useState<string>("");
   const reduceMotion = useReducedMotion();

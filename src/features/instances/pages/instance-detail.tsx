@@ -8,7 +8,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { ProcessConsole } from "@/features/instances/components/process-console";
+import { SyncProgressPanel } from "@/features/instances/components/sync-progress-panel";
 import { useConfig } from "@/features/config/context/config-context-provider";
+import { useInstanceProcess } from "@/features/instances/hooks/use-instance-process";
+import { useInstanceSync } from "@/features/instances/hooks/use-instance-sync";
 import { cn } from "@/lib/utils";
 import { InstanceConfig } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
@@ -17,34 +21,28 @@ import {
   FolderOpen,
   Network,
   Play,
+  RefreshCw,
   Server,
-  Settings,
   Settings2,
+  Square,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import type { SyncProgressEvent } from "@/types";
+import { toast } from "sonner";
 import { Link, useParams } from "wouter";
 
 const detailCardClass =
   "gap-0 border-border/80 bg-card/70 py-0 shadow-[0_0_15px_hsl(var(--accent)/0.08)] ring-1 ring-accent/20";
 
-function placeholderActivateNerevarSync(instanceId: string) {
-  console.log("[nerevar] activate nerevar syncing", { instanceId });
-}
-
-function placeholderLaunchClient(instanceId: string) {
-  console.log("[nerevar] launch client", { instanceId });
-}
-
-function placeholderLaunchServer(instanceId: string) {
-  console.log("[nerevar] launch server", { instanceId });
-}
-
-function placeholderConnectToSync(instanceId: string) {
-  console.log("[nerevar] connect to nerevar sync", { instanceId });
-}
-
-function placeholderOpenDataManager(instanceId: string) {
-  console.log("[nerevar] open data manager", { instanceId });
+async function activateNerevarSync(instanceId: string) {
+  try {
+    await invoke("activate_hosting_instance", { instanceId });
+    toast.success("Hosting active — serving your last saved manifest");
+  } catch (error) {
+    toast.error(String(error));
+  }
 }
 
 export function InstanceDetailPage() {
@@ -52,11 +50,8 @@ export function InstanceDetailPage() {
   const id = params.id ?? "unknown";
 
   const config = useConfig();
-  const ownedInstances = config?.ownedInstances;
-  const syncedInstances = config?.syncedInstances;
-
-  const ownedInstance = ownedInstances?.find((instance) => instance.id === id);
-  const syncedInstance = syncedInstances?.find(
+  const ownedInstance = config?.ownedInstances?.find((instance) => instance.id === id);
+  const syncedInstance = config?.syncedInstances?.find(
     (instance) => instance.id === id,
   );
 
@@ -96,6 +91,10 @@ function InstanceDetailShell({
   instance: InstanceConfig;
   children: ReactNode;
 }) {
+  const lastSynced = instance.lastSyncedAt
+    ? new Date(instance.lastSyncedAt).toLocaleString()
+    : null;
+
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-1 pb-8">
       <Button
@@ -119,13 +118,11 @@ function InstanceDetailShell({
             >
               {kindLabel}
             </Badge>
-            <Badge
-              // Once active instances are implemented, change this to use the instance's active state
-              variant={false ? "default" : "secondary"}
-              className="font-display text-[0.7rem] tracking-[0.15em] uppercase"
-            >
-              {false ? "Active" : "Inactive"}
-            </Badge>
+            {lastSynced ? (
+              <Badge variant="secondary" className="font-mono text-[0.65rem]">
+                Synced {lastSynced}
+              </Badge>
+            ) : null}
           </div>
           <CardTitle className="font-display text-3xl tracking-[0.08em] text-gradient-gold">
             {instance.name}
@@ -134,9 +131,7 @@ function InstanceDetailShell({
             {instance.description || "No description provided."}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-5 py-5">
-          {children}
-        </CardContent>
+        <CardContent className="flex flex-col gap-5 py-5">{children}</CardContent>
       </Card>
     </div>
   );
@@ -174,10 +169,138 @@ function PathRow({ label, path }: { label: string; path: string }) {
       <span className="font-display text-[0.7rem] tracking-[0.15em] text-foreground/55 uppercase">
         {label}
       </span>
-      <code className="truncate font-mono text-[0.8rem] text-foreground/80">
-        {path}
-      </code>
+      <code className="truncate font-mono text-[0.8rem] text-foreground/80">{path}</code>
     </div>
+  );
+}
+
+function ClientPlayControls({
+  instanceId,
+  description,
+  synced = false,
+}: {
+  instanceId: string;
+  description: string;
+  synced?: boolean;
+}) {
+  const client = useInstanceProcess(instanceId, "client", synced);
+  const [launchProgress, setLaunchProgress] = useState<SyncProgressEvent | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!synced) return;
+    const unlisten = listen<SyncProgressEvent>("sync-progress", (event) => {
+      if (event.payload.instanceId !== instanceId) return;
+      setLaunchProgress(event.payload);
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [instanceId, synced]);
+
+  return (
+    <DetailSection title="Play" description={description}>
+      {synced && (client.launching || launchProgress) ? (
+        <SyncProgressPanel
+          progress={launchProgress}
+          syncing={client.launching}
+        />
+      ) : null}
+      <Button
+        variant="launch"
+        className="h-10 w-full text-base"
+        disabled={client.running || client.launching}
+        onClick={() => void client.launch()}
+      >
+        <Play data-icon="inline-start" />
+        {client.launching ? "Checking updates…" : "Launch client"}
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full"
+        disabled={!client.running}
+        onClick={() => void client.stop()}
+      >
+        <Square data-icon="inline-start" />
+        Stop client
+      </Button>
+      <ProcessConsole
+        title="Client output"
+        lines={client.lines}
+        running={client.running}
+        onClear={client.clear}
+      />
+    </DetailSection>
+  );
+}
+
+function OwnedPlaySection({ instance }: { instance: InstanceConfig }) {
+  const client = useInstanceProcess(instance.id, "client");
+  const server = useInstanceProcess(instance.id, "server");
+
+  return (
+    <>
+      <DetailSection
+        title="Play"
+        description="Launch TES3MP using the generated OpenMW launch config for this instance."
+      >
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Button
+            variant="launch"
+            className="h-10 w-full text-base"
+            disabled={client.running}
+            onClick={() => void client.launch()}
+          >
+            <Play data-icon="inline-start" />
+            Launch client
+          </Button>
+          <Button
+            variant="server"
+            className="h-10 w-full text-base"
+            disabled={server.running}
+            onClick={() => void server.launch()}
+          >
+            <Server data-icon="inline-start" />
+            Launch server
+          </Button>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!client.running}
+            onClick={() => void client.stop()}
+          >
+            <Square data-icon="inline-start" />
+            Stop client
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!server.running}
+            onClick={() => void server.stop()}
+          >
+            <Square data-icon="inline-start" />
+            Stop server
+          </Button>
+        </div>
+      </DetailSection>
+
+      <ProcessConsole
+        title="Client output"
+        lines={client.lines}
+        running={client.running}
+        onClear={client.clear}
+      />
+      <ProcessConsole
+        title="Server output"
+        lines={server.lines}
+        running={server.running}
+        onClear={server.clear}
+      />
+    </>
   );
 }
 
@@ -189,35 +312,13 @@ function OwnedInstanceDetail({ instance }: { instance: InstanceConfig }) {
       kindLabel="Owned"
       instance={instance}
     >
-      <DetailSection
-        title="Play"
-        description="Launch TES3MP for this instance."
-      >
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Button
-            variant="launch"
-            className="h-10 w-full text-base"
-            onClick={() => placeholderLaunchClient(instance.id)}
-          >
-            <Play data-icon="inline-start" />
-            Launch client
-          </Button>
-          <Button
-            variant="server"
-            className="h-10 w-full text-base"
-            onClick={() => placeholderLaunchServer(instance.id)}
-          >
-            <Server data-icon="inline-start" />
-            Launch server
-          </Button>
-        </div>
-      </DetailSection>
+      <OwnedPlaySection instance={instance} />
 
       <Separator className="bg-border/60" />
 
       <DetailSection
         title="Nerevar sync"
-        description="Share mods and settings with connected players."
+        description="Share mods and settings with connected players. Hosting uses the manifest already saved from the data manager — it does not rescan or rebuild files."
       >
         <Button
           variant="outline"
@@ -225,37 +326,31 @@ function OwnedInstanceDetail({ instance }: { instance: InstanceConfig }) {
             "h-10 w-full font-display text-base tracking-[0.15em] uppercase",
             "border-accent/40 hover:border-accent/60 hover:bg-accent/5",
           )}
-          onClick={() => placeholderActivateNerevarSync(instance.id)}
+          onClick={() => void activateNerevarSync(instance.id)}
         >
           <Network data-icon="inline-start" />
-          Activate Nerevar syncing
+          Start hosting last manifest
         </Button>
-        <Button
-          variant="secondary"
-          className={cn(
-            "h-10 w-full font-display text-base tracking-[0.15em] uppercase",
-            "border-accent/40 hover:border-accent/60 hover:bg-accent/5",
-          )}
-          onClick={() => placeholderOpenDataManager(instance.id)}
-        >
-          <Settings2 data-icon="inline-start" />
-          Open Data Manager
+        <p className="font-serif text-sm leading-relaxed text-foreground/60">
+          To regenerate the manifest after changing mods, open the data manager and use
+          &quot;Save &amp; host manifest&quot;.
+        </p>
+        <Button variant="secondary" className="h-10 w-full" asChild>
+          <Link href={`/instances/${encodeURIComponent(instance.id)}/data`}>
+            <Settings2 data-icon="inline-start" />
+            Open data manager
+          </Link>
         </Button>
       </DetailSection>
 
       <Separator className="bg-border/60" />
 
-      <DetailSection
-        title="Directories"
-        description="Open instance folders on disk."
-      >
+      <DetailSection title="Directories" description="Open instance folders on disk.">
         <div className="grid gap-2 sm:grid-cols-2">
           <Button
             variant="outline"
             className="h-10 w-full font-display text-base tracking-[0.15em] uppercase"
-            onClick={() =>
-              invoke<void>("open_directory", { path: instance.path })
-            }
+            onClick={() => invoke<void>("open_directory", { path: instance.path })}
           >
             <FolderOpen data-icon="inline-start" />
             Instance folder
@@ -263,9 +358,7 @@ function OwnedInstanceDetail({ instance }: { instance: InstanceConfig }) {
           <Button
             variant="outline"
             className="h-10 w-full font-display text-base tracking-[0.15em] uppercase"
-            onClick={() =>
-              invoke<void>("open_directory", { path: instance.dataDir })
-            }
+            onClick={() => invoke<void>("open_directory", { path: instance.dataDir })}
           >
             <FolderOpen data-icon="inline-start" />
             Data folder
@@ -281,6 +374,8 @@ function OwnedInstanceDetail({ instance }: { instance: InstanceConfig }) {
 }
 
 function SyncedInstanceDetail({ instance }: { instance: InstanceConfig }) {
+  const sync = useInstanceSync(instance.id);
+
   return (
     <InstanceDetailShell
       backHref="/synced-instances"
@@ -289,46 +384,77 @@ function SyncedInstanceDetail({ instance }: { instance: InstanceConfig }) {
       instance={instance}
     >
       <DetailSection
-        title="Play"
-        description="Join this synced session in TES3MP."
+        title="Connection"
+        description={
+          instance.remoteHost
+            ? `Nerevar sync at ${instance.remoteHost}:${instance.remoteSyncPort ?? "?"} · TES3MP game port ${instance.tes3mpServerPort ?? "?"}`
+            : "Manage your link to this Nerevar server."
+        }
       >
         <div className="grid gap-2 sm:grid-cols-2">
           <Button
-            variant="launch"
-            className="h-10 w-full"
-            onClick={() => placeholderLaunchClient(instance.id)}
+            variant="outline"
+            className={cn(
+              "h-10 w-full font-display text-base tracking-[0.15em] uppercase",
+              "border-accent/40 hover:border-accent/60 hover:bg-accent/5",
+            )}
+            disabled={sync.syncing}
+            onClick={() => void sync.startSync()}
           >
-            <Play data-icon="inline-start" />
-            Launch client
+            {sync.syncing ? (
+              <RefreshCw className="animate-spin" data-icon="inline-start" />
+            ) : (
+              <Network data-icon="inline-start" />
+            )}
+            Sync from host
           </Button>
           <Button
-            variant="server"
+            variant="secondary"
             className="h-10 w-full"
-            onClick={() => placeholderLaunchServer(instance.id)}
+            disabled={sync.syncing}
+            onClick={() => void sync.cancelSync()}
           >
-            <Server data-icon="inline-start" />
-            Launch server
+            Cancel sync
           </Button>
         </div>
+        <SyncProgressPanel
+          progress={sync.progress}
+          syncing={sync.syncing}
+          onCancel={() => void sync.cancelSync()}
+        />
       </DetailSection>
 
       <Separator className="bg-border/60" />
 
-      <DetailSection
-        title="Connection"
-        description="Manage your link to this Nerevar server."
-      >
-        <Button
-          variant="outline"
-          className={cn(
-            "h-10 w-full font-display text-base tracking-[0.15em] uppercase",
-            "border-accent/40 hover:border-accent/60 hover:bg-accent/5",
-          )}
-          onClick={() => placeholderConnectToSync(instance.id)}
-        >
-          <Network data-icon="inline-start" />
-          Connect to Nerevar sync
-        </Button>
+      <ClientPlayControls
+        instanceId={instance.id}
+        synced
+        description="Checks the host for mod updates, syncs if needed, then connects to the TES3MP server."
+      />
+
+      <Separator className="bg-border/60" />
+
+      <DetailSection title="Directories" description="Open instance folders on disk.">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Button
+            variant="outline"
+            className="h-10 w-full"
+            onClick={() => invoke<void>("open_directory", { path: instance.path })}
+          >
+            <FolderOpen data-icon="inline-start" />
+            Instance folder
+          </Button>
+          <Button
+            variant="outline"
+            className="h-10 w-full"
+            onClick={() => invoke<void>("open_directory", { path: instance.dataDir })}
+          >
+            <FolderOpen data-icon="inline-start" />
+            Data folder
+          </Button>
+        </div>
+        <PathRow label="Instance path" path={instance.path} />
+        <PathRow label="Data path" path={instance.dataDir} />
       </DetailSection>
     </InstanceDetailShell>
   );

@@ -1,16 +1,24 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod config;
+mod connection;
 mod data;
 mod file_actions;
 mod github_getters;
+mod instance_data;
 mod instance_setup;
 mod nerevar_server;
 mod openmw_ini_importer;
+mod process_manager;
+mod sync_client;
+mod sync_host;
 
 use crate::data::GithubReleaseResponse;
 use crate::data::NerevarConfig;
 use crate::data::NewInstanceConfig;
-use std::sync::Mutex;
+use crate::process_manager::ProcessManager;
+use crate::sync_client::SyncCoordinator;
+use crate::sync_host::new_shared_sync_host;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use tauri::State;
 use tokio::sync::watch;
@@ -154,12 +162,19 @@ pub fn run() {
                 .unwrap()
                 .server_port_tx = Some(tx);
 
+            let sync_host = new_shared_sync_host();
+            app.manage(sync_host.clone());
+            app.manage(Arc::new(SyncCoordinator::new()));
+            app.manage(Arc::new(ProcessManager::new()));
+
+            let server_ctx = nerevar_server::state::ServerContext::new(sync_host);
+
             tauri::async_runtime::spawn(async move {
                 let mut current_task: Option<tauri::async_runtime::JoinHandle<()>>;
 
-                let start = |port: i32| {
+                let start = |port: i32, ctx: Arc<nerevar_server::state::ServerContext>| {
                     tauri::async_runtime::spawn(async move {
-                        if let Err(err) = nerevar_server::start_web_server_on_port(port).await {
+                        if let Err(err) = nerevar_server::start_web_server_on_port(port, ctx).await {
                             tauri_plugin_log::log::error!(
                                 "NEREVAR SERVER: failed to start on port {port}: {err}"
                             );
@@ -167,7 +182,7 @@ pub fn run() {
                     })
                 };
 
-                current_task = Some(start(*rx.borrow()));
+                current_task = Some(start(*rx.borrow(), server_ctx.clone()));
 
                 while rx.changed().await.is_ok() {
                     let next_port = *rx.borrow();
@@ -177,7 +192,7 @@ pub fn run() {
                         task.abort();
                     }
 
-                    current_task = Some(start(next_port));
+                    current_task = Some(start(next_port, server_ctx.clone()));
                 }
             });
             Ok(())
@@ -196,6 +211,26 @@ pub fn run() {
             add_instance,
             validate_global_openmw_config,
             generate_default_global_openmw_config,
+            instance_data::commands::scan_instance_data,
+            instance_data::commands::get_instance_load_order,
+            instance_data::commands::save_instance_load_order,
+            instance_data::commands::resolve_instance_openmw,
+            instance_data::commands::write_instance_launch_cfg,
+            instance_data::commands::build_instance_manifest,
+            instance_data::commands::validate_instance_manifest,
+            instance_data::commands::set_hosting_instance,
+            sync_host::commands::activate_hosting_instance,
+            sync_host::commands::clear_hosting_instance,
+            sync_host::commands::get_sync_host_status,
+            connection::commands::ping_remote_nerevar_server,
+            connection::commands::fetch_remote_manifest_summary,
+            connection::commands::add_synced_connection,
+            connection::commands::sync_instance_from_remote,
+            connection::commands::cancel_instance_sync,
+            connection::commands::launch_instance_client,
+            connection::commands::launch_instance_server,
+            connection::commands::stop_instance_process,
+            connection::commands::is_instance_process_running,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -10,6 +10,29 @@ pub struct InstanceConfig {
     pub description: String,
     pub path: String,
     pub data_dir: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_host: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_sync_port: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_synced_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tes3mp_server_port: Option<u16>,
+}
+
+#[derive(TS, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct NewConnectionConfig {
+    pub release_id: String,
+    pub connection_name: String,
+    pub connection_description: String,
+    pub instance_root_path: String,
+    pub instance_data_dir: String,
+    pub remote_host: String,
+    pub remote_sync_port: u16,
 }
 
 #[derive(Serialize, Deserialize, Clone, TS)]

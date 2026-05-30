@@ -9,6 +9,7 @@ use encoding_rs::Encoding;
 use super::content_files::{self, is_record_plugin};
 use super::esm_header;
 use super::fallback_keys::FALLBACK_INI_KEYS;
+use super::plugin_index::PluginIndex;
 
 pub type MultiStrMap = BTreeMap<String, Vec<String>>;
 
@@ -399,40 +400,16 @@ pub fn find_plugin_in_data_paths(
     data_paths: &[PathBuf],
     plugin_name: &str,
 ) -> Option<PathBuf> {
-    for data_path in data_paths.iter().rev() {
-        if let Some(found) = find_plugin_file_recursive(data_path, plugin_name) {
-            return Some(found);
-        }
-    }
-    None
-}
-
-fn find_plugin_file_recursive(dir: &Path, file_name: &str) -> Option<PathBuf> {
-    let entries = std::fs::read_dir(dir).ok()?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() {
-            if path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.eq_ignore_ascii_case(file_name))
-            {
-                return Some(path);
-            }
-        } else if path.is_dir() {
-            if let Some(found) = find_plugin_file_recursive(&path, file_name) {
-                return Some(found);
-            }
-        }
-    }
-    None
+    PluginIndex::build(data_paths)
+        .find(plugin_name)
+        .cloned()
 }
 
 /// Sort plugin filenames by file timestamp and master dependencies (OpenMW ini importer rules).
 /// Extended OpenMW content (`.omwscripts`, `.omwaddon`, `.bsa`) keeps the load-order sequence
 /// from `plugin_names` and is appended after dependency-sorted `.esm`/`.esp` entries.
 pub fn sort_content_plugins(
-    data_paths: &[PathBuf],
+    index: &PluginIndex,
     plugin_names: &[String],
 ) -> Result<Vec<String>, String> {
     let mut record_files: Vec<(SystemTime, PathBuf)> = Vec::new();
@@ -441,9 +418,9 @@ pub fn sort_content_plugins(
             continue;
         }
 
-        if let Some(path) = find_plugin_in_data_paths(data_paths, name) {
-            if let Some(time) = last_write_time(&path) {
-                record_files.push((time, path));
+        if let Some(path) = index.find(name) {
+            if let Some(time) = last_write_time(path) {
+                record_files.push((time, path.clone()));
             }
         }
     }
@@ -473,7 +450,7 @@ pub fn sort_content_plugins(
         if is_record_plugin(name) || !content_files::is_openmw_content_file(name) {
             continue;
         }
-        if find_plugin_in_data_paths(data_paths, name).is_none() {
+        if index.find(name).is_none() {
             continue;
         }
         if seen.insert(name.to_ascii_lowercase()) {
@@ -531,8 +508,9 @@ mod tests {
         fs::write(mod_dir.join("Helper.esp"), b"").unwrap();
         fs::write(mod_dir.join("pack.omwscripts"), b"GLOBAL: x.lua").unwrap();
 
+        let index = PluginIndex::build(&[mod_dir.clone()]);
         let sorted = sort_content_plugins(
-            &[mod_dir.clone()],
+            &index,
             &[
                 "pack.omwscripts".into(),
                 "Helper.esp".into(),

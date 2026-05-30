@@ -3,6 +3,7 @@ mod esm_header;
 mod fallback_keys;
 mod global_cfg;
 mod importer;
+mod plugin_index;
 
 pub use global_cfg::{
     begin_global_openmw_launch, read_first_global_data_path, read_nerevar_base_data_path,
@@ -18,3 +19,4 @@ pub use importer::{
     resolve_morrowind_ini, sort_content_plugins, write_to_file, ImportOptions, IniEncoding,
     MultiStrMap,
 };
+pub use plugin_index::{should_skip_plugin_search_dir, PluginIndex};

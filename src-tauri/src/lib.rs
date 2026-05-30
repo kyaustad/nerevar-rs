@@ -224,6 +224,7 @@ pub fn run() {
             instance_data::commands::import_mo2_modlist_csv,
             instance_data::commands::resolve_instance_openmw,
             instance_data::commands::write_instance_launch_cfg,
+            instance_data::commands::save_and_host_instance,
             instance_data::commands::build_instance_manifest,
             instance_data::commands::validate_instance_manifest,
             instance_data::commands::set_hosting_instance,

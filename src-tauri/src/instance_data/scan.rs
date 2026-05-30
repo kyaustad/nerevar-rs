@@ -5,31 +5,19 @@ use uuid::Uuid;
 use super::paths::{INSTANCE_DATA_DIR, NEREVAR_DIR};
 use crate::instance_setup::INSTANCE_TES3MP_DIR;
 use crate::openmw_ini_importer::is_openmw_content_path;
+use crate::openmw_ini_importer::should_skip_plugin_search_dir;
+use super::progress::{BackgroundOperationPhase, ProgressEmitter};
 use super::types::{PackageKind, ScannedPackage};
 
 const DATA_DIR_NAMES: &[&str] = &[
     "meshes", "textures", "icons", "music", "sound", "bookart", "fonts", "video",
 ];
 
-/// Subdirectories that never contain OpenMW `content=` files. Skipping them keeps
-/// plugin discovery fast on large mods (Tamriel Rebuilt, BCOM, etc.).
-const PLUGIN_SEARCH_SKIP_DIRS: &[&str] = &[
-    "meshes",
-    "textures",
-    "icons",
-    "music",
-    "sound",
-    "bookart",
-    "fonts",
-    "video",
-    "distantland",
-    "shaders",
-    "screenshots",
-    "fanim",
-];
-
 /// Scan immediate child folders of the instance data directory (e.g. `Better Bodies/`, `Rock Replacer/`).
-pub fn scan_data_directory(data_dir: &Path) -> Result<Vec<ScannedPackage>, String> {
+pub fn scan_data_directory(
+    data_dir: &Path,
+    progress: &mut Option<ProgressEmitter>,
+) -> Result<Vec<ScannedPackage>, String> {
     let mut packages = Vec::new();
 
     if !data_dir.exists() {
@@ -39,6 +27,7 @@ pub fn scan_data_directory(data_dir: &Path) -> Result<Vec<ScannedPackage>, Strin
     let entries = std::fs::read_dir(data_dir)
         .map_err(|e| format!("Failed to read {}: {e}", data_dir.display()))?;
 
+    let mut package_dirs = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
@@ -47,9 +36,24 @@ pub fn scan_data_directory(data_dir: &Path) -> Result<Vec<ScannedPackage>, Strin
         }
 
         let folder_name = entry.file_name().to_string_lossy().to_string();
-
         if should_skip_package_dir(&folder_name) {
             continue;
+        }
+
+        package_dirs.push((folder_name, path));
+    }
+
+    let total = package_dirs.len() as u64;
+    for (index, (folder_name, path)) in package_dirs.into_iter().enumerate() {
+        if let Some(emitter) = progress.as_mut() {
+            emitter.emit(
+                BackgroundOperationPhase::ScanningPackages,
+                format!("Scanning {folder_name}"),
+                index as u64 + 1,
+                total,
+                Some(folder_name.clone()),
+                false,
+            );
         }
 
         let plugins = find_plugins(&path);
@@ -119,15 +123,6 @@ fn collect_plugins(dir: &Path, out: &mut Vec<String>) {
     }
 }
 
-fn should_skip_plugin_search_dir(name: &str) -> bool {
-    if name.starts_with('.') {
-        return true;
-    }
-    PLUGIN_SEARCH_SKIP_DIRS
-        .iter()
-        .any(|candidate| name.eq_ignore_ascii_case(candidate))
-}
-
 fn classify_package(dir: &Path, plugins: &[String]) -> PackageKind {
     if !plugins.is_empty() {
         return PackageKind::Mod;
@@ -187,7 +182,7 @@ mod tests {
         let rock = dir.join("Rock Replacer");
         std::fs::create_dir_all(rock.join("textures")).unwrap();
 
-        let packages = scan_data_directory(&dir).unwrap();
+        let packages = scan_data_directory(&dir, &mut None).unwrap();
         assert_eq!(packages.len(), 2);
 
         let bb = packages
@@ -223,7 +218,7 @@ mod tests {
         std::fs::write(rebuilt.join("TR_Mainland.esm"), b"TES3").unwrap();
         std::fs::write(rebuilt.join("TR_Mainland.bsa"), b"BSA").unwrap();
 
-        let packages = scan_data_directory(&dir).unwrap();
+        let packages = scan_data_directory(&dir, &mut None).unwrap();
         let lua = packages.iter().find(|p| p.name == "Lua Pack").expect("Lua Pack");
         assert!(lua
             .plugins

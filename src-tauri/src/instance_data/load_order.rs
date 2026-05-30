@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use super::paths::{ensure_instance_data_layout, load_order_path};
+use super::progress::{BackgroundOperationPhase, ProgressEmitter};
 use super::scan::{new_entry_id, scan_data_directory};
 use super::types::{LoadOrder, LoadOrderEntry, PluginEntry, LOAD_ORDER_VERSION};
 use crate::openmw_ini_importer;
@@ -24,7 +25,10 @@ pub fn save_load_order(data_dir: &Path, load_order: &LoadOrder) -> Result<(), St
 }
 
 /// Scan disk and merge results into load order (add new packages, update checksums/plugins).
-pub fn scan_and_merge_load_order(data_dir: &Path) -> Result<LoadOrder, String> {
+pub fn scan_and_merge_load_order(
+    data_dir: &Path,
+    progress: &mut Option<ProgressEmitter>,
+) -> Result<LoadOrder, String> {
     ensure_instance_data_layout(data_dir)?;
     let mut load_order = load_load_order(data_dir)?;
     if load_order.version == 0 {
@@ -35,8 +39,32 @@ pub fn scan_and_merge_load_order(data_dir: &Path) -> Result<LoadOrder, String> {
         load_order.base_game_data = openmw_ini_importer::read_first_global_data_path();
     }
 
-    let scanned = scan_data_directory(data_dir)?;
+    let scanned = scan_data_directory(data_dir, progress)?;
+
+    if let Some(emitter) = progress.as_mut() {
+        emitter.emit(
+            BackgroundOperationPhase::MergingLoadOrder,
+            "Merging scan results into load order",
+            0,
+            1,
+            None,
+            true,
+        );
+    }
+
     merge_scanned_with_data_dir(data_dir, &mut load_order, scanned);
+
+    if let Some(emitter) = progress.as_mut() {
+        emitter.emit(
+            BackgroundOperationPhase::SavingLoadOrder,
+            "Saving load-order.json",
+            0,
+            1,
+            None,
+            true,
+        );
+    }
+
     save_load_order(data_dir, &load_order)?;
     Ok(load_order)
 }

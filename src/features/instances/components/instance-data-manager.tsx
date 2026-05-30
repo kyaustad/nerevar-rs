@@ -37,6 +37,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useBackgroundOperation } from "@/features/instances/context/background-operation-context";
 import {
   moveEntryByOffset,
   normalizePriorities,
@@ -90,15 +91,20 @@ export function InstanceDataManager({
   instance,
   instanceId,
 }: InstanceDataManagerProps) {
+  const { runOperation, isRunning } = useBackgroundOperation();
   const [loadOrder, setLoadOrder] = useState<LoadOrder | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
-  const [scanning, setScanning] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [hosting, setHosting] = useState(false);
   const [pendingDeleteEntry, setPendingDeleteEntry] =
     useState<LoadOrderEntry | null>(null);
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
-  const [importingMo2, setImportingMo2] = useState(false);
+
+  const scanning = isRunning("scanInstanceData");
+  const saving = isRunning("saveLoadOrder");
+  const hosting = isRunning("hostManifest");
+  const importingMo2 = isRunning("importMo2Modlist");
+  const writingLaunchCfg = isRunning("writeLaunchCfg");
+  const operationBusy =
+    scanning || saving || hosting || importingMo2 || writingLaunchCfg;
 
   const clearMo2ContentOrder = (order: LoadOrder): LoadOrder => ({
     ...order,
@@ -107,19 +113,24 @@ export function InstanceDataManager({
 
   const refresh = useCallback(async () => {
     if (!instanceId) return;
-    setScanning(true);
     try {
-      const order = await invoke<LoadOrder>("scan_instance_data", {
+      const order = await runOperation({
         instanceId,
+        instanceName: instance.name,
+        kind: "scanInstanceData",
+        task: (operationId) =>
+          invoke<LoadOrder>("scan_instance_data", {
+            instanceId,
+            operationId,
+          }),
       });
       setLoadOrder(order);
     } catch (error) {
       toast.error(`Failed to scan data directory: ${error}`);
     } finally {
       setInitialLoading(false);
-      setScanning(false);
     }
-  }, [instanceId]);
+  }, [instance.name, instanceId, runOperation]);
 
   useEffect(() => {
     void refresh();
@@ -127,29 +138,40 @@ export function InstanceDataManager({
 
   const saveLoadOrder = async () => {
     if (!loadOrder) return;
-    setSaving(true);
     try {
       const normalized = {
         ...loadOrder,
         entries: normalizePriorities(loadOrder.entries),
       };
-      await invoke("save_instance_load_order", {
+      await runOperation({
         instanceId,
-        loadOrder: normalized,
+        instanceName: instance.name,
+        kind: "saveLoadOrder",
+        task: (operationId) =>
+          invoke("save_instance_load_order", {
+            instanceId,
+            loadOrder: normalized,
+            operationId,
+          }),
       });
       setLoadOrder(normalized);
       toast.success("Load order saved");
     } catch (error) {
       toast.error(`Failed to save: ${error}`);
-    } finally {
-      setSaving(false);
     }
   };
 
   const writeLaunchCfg = async () => {
     try {
-      const path = await invoke<string>("write_instance_launch_cfg", {
+      const path = await runOperation({
         instanceId,
+        instanceName: instance.name,
+        kind: "writeLaunchCfg",
+        task: (operationId) =>
+          invoke<string>("write_instance_launch_cfg", {
+            instanceId,
+            operationId,
+          }),
       });
       toast.success(`Launch config written to ${path}`);
     } catch (error) {
@@ -158,19 +180,30 @@ export function InstanceDataManager({
   };
 
   const startHosting = async () => {
-    setHosting(true);
+    if (!loadOrder) return;
     try {
-      await saveLoadOrder();
-      const manifest = await invoke<NerevarManifest>("set_hosting_instance", {
+      const normalized = {
+        ...loadOrder,
+        entries: normalizePriorities(loadOrder.entries),
+      };
+      const manifest = await runOperation({
         instanceId,
+        instanceName: instance.name,
+        kind: "hostManifest",
+        detail: "Saving load order and hashing mod files…",
+        task: (operationId) =>
+          invoke<NerevarManifest>("save_and_host_instance", {
+            instanceId,
+            loadOrder: normalized,
+            operationId,
+          }),
       });
+      setLoadOrder(normalized);
       toast.success(
         `Hosting started (${formatByteSize(manifest.totalDownloadBytes)} in manifest)`,
       );
     } catch (error) {
       toast.error(`Failed to start hosting: ${error}`);
-    } finally {
-      setHosting(false);
     }
   };
 
@@ -269,12 +302,19 @@ export function InstanceDataManager({
   };
 
   const importMo2Modlist = async () => {
-    setImportingMo2(true);
     try {
       const csvPath = await invoke<string>("open_csv_file_picker");
-      const result = await invoke<Mo2ModlistImportResult>("import_mo2_modlist_csv", {
+      const result = await runOperation({
         instanceId,
-        csvPath,
+        instanceName: instance.name,
+        kind: "importMo2Modlist",
+        detail: "Rescanning and applying load order…",
+        task: (operationId) =>
+          invoke<Mo2ModlistImportResult>("import_mo2_modlist_csv", {
+            instanceId,
+            csvPath,
+            operationId,
+          }),
       });
       setLoadOrder(result.loadOrder);
 
@@ -299,8 +339,6 @@ export function InstanceDataManager({
         return;
       }
       toast.error(`Failed to import MO2 CSV: ${error}`);
-    } finally {
-      setImportingMo2(false);
     }
   };
 
@@ -340,6 +378,8 @@ export function InstanceDataManager({
             saving={saving}
             hosting={hosting}
             importingMo2={importingMo2}
+            writingLaunchCfg={writingLaunchCfg}
+            operationBusy={operationBusy}
             onRefresh={() => void refresh()}
             onImportMo2={() => void importMo2Modlist()}
             onSave={() => void saveLoadOrder()}
@@ -362,7 +402,6 @@ export function InstanceDataManager({
             <TabsContent value="directories" className="mt-4">
               <DirectoryList
                 initialLoading={initialLoading}
-                scanning={scanning}
                 loadOrder={loadOrder}
                 sortedEntries={sortedEntries}
                 deletingEntryId={deletingEntryId}
@@ -412,6 +451,8 @@ function DataManagerToolbar({
   saving,
   hosting,
   importingMo2,
+  writingLaunchCfg,
+  operationBusy,
   onRefresh,
   onImportMo2,
   onSave,
@@ -423,6 +464,8 @@ function DataManagerToolbar({
   saving: boolean;
   hosting: boolean;
   importingMo2: boolean;
+  writingLaunchCfg: boolean;
+  operationBusy: boolean;
   onRefresh: () => void;
   onImportMo2: () => void;
   onSave: () => void;
@@ -447,7 +490,7 @@ function DataManagerToolbar({
       <Button
         variant="outline"
         className="h-10 text-base"
-        disabled={scanning || importingMo2}
+        disabled={operationBusy}
         onClick={onImportMo2}
       >
         {importingMo2 ? (
@@ -460,24 +503,31 @@ function DataManagerToolbar({
       <Button
         variant="outline"
         className="h-10 text-base"
-        disabled={!loadOrder || saving}
+        disabled={!loadOrder || operationBusy}
         onClick={onSave}
       >
-        <Save data-icon="inline-start" />
+        {saving ? (
+          <Loader2 className="animate-spin" data-icon="inline-start" />
+        ) : (
+          <Save data-icon="inline-start" />
+        )}
         Save order
       </Button>
       <Button
         variant="secondary"
         className="h-10 text-base"
-        disabled={!loadOrder}
+        disabled={!loadOrder || operationBusy}
         onClick={onWriteLaunchCfg}
       >
+        {writingLaunchCfg ? (
+          <Loader2 className="animate-spin" data-icon="inline-start" />
+        ) : null}
         Write launch cfg
       </Button>
       <Button
         variant="launch"
         className="h-10 text-base"
-        disabled={!loadOrder || hosting}
+        disabled={!loadOrder || operationBusy}
         onClick={onStartHosting}
       >
         {hosting ? (
@@ -563,7 +613,6 @@ function DeletePackageDialog({
 
 function DirectoryList({
   initialLoading,
-  scanning,
   loadOrder,
   sortedEntries,
   deletingEntryId,
@@ -575,7 +624,6 @@ function DirectoryList({
   onRequestDelete,
 }: {
   initialLoading: boolean;
-  scanning: boolean;
   loadOrder: LoadOrder | null;
   sortedEntries: LoadOrderEntry[];
   deletingEntryId: string | null;
@@ -632,7 +680,7 @@ function DirectoryList({
     return <p className="font-serif text-base text-foreground/65">Scanning…</p>;
   }
 
-  if (sortedEntries.length === 0 && !scanning) {
+  if (sortedEntries.length === 0) {
     return (
       <p className="font-serif text-base leading-relaxed text-foreground/65">
         No packages found. Add mod folders directly in the instance data
@@ -641,22 +689,7 @@ function DirectoryList({
     );
   }
 
-  if (sortedEntries.length === 0 && scanning) {
-    return (
-      <p className="font-serif text-base text-foreground/65">
-        Rescanning data directory…
-      </p>
-    );
-  }
-
   return (
-    <div className="space-y-2">
-      {scanning ? (
-        <p className="flex items-center gap-2 font-serif text-sm text-foreground/70">
-          <Loader2 className="size-4 animate-spin" />
-          Rescanning data directory…
-        </p>
-      ) : null}
     <DndContext
       sensors={sensors}
       collisionDetection={closestCenter}
@@ -711,7 +744,6 @@ function DirectoryList({
         ) : null}
       </DragOverlay>
     </DndContext>
-    </div>
   );
 }
 

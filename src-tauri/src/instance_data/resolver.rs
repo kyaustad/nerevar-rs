@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use super::paths::package_abs_path;
 use super::types::{LoadOrder, NerevarManifest, ResolvedOpenMwConfig};
-use crate::openmw_ini_importer::{find_plugin_in_data_paths, quote_data_path, sort_content_plugins};
+use crate::openmw_ini_importer::{quote_data_path, sort_content_plugins, PluginIndex};
 
 const DEFAULT_BASE_ESMS: &[&str] = &["Morrowind.esm", "Tribunal.esm", "Bloodmoon.esm"];
 
@@ -36,7 +36,8 @@ pub fn resolve_load_order(data_dir: &Path, load_order: &LoadOrder) -> Result<Res
         }
     }
 
-    let mut content = resolve_content_plugins(load_order, &data_paths, &plugin_names)?;
+    let index = PluginIndex::build(&data_paths);
+    let mut content = resolve_content_plugins(load_order, &index, &plugin_names)?;
 
     if let Some(base_path) = load_order
         .base_game_data
@@ -75,9 +76,10 @@ pub fn resolve_synced_load_order(
         .map(|p| PathBuf::from(strip_quotes(p)))
         .collect();
 
+    let index = PluginIndex::build(&data_paths);
     let mut content = Vec::new();
     for plugin in &manifest.resolved.content {
-        if find_plugin_in_data_paths(&data_paths, plugin).is_some() {
+        if index.find(plugin).is_some() {
             content.push(plugin.clone());
         }
     }
@@ -95,22 +97,22 @@ pub fn resolve_synced_load_order(
 
 fn resolve_content_plugins(
     load_order: &LoadOrder,
-    data_paths: &[PathBuf],
+    index: &PluginIndex,
     enabled_plugin_names: &[String],
 ) -> Result<Vec<String>, String> {
     if let Some(content_order) = &load_order.content_order {
         return Ok(resolve_explicit_content_order(
-            data_paths,
+            index,
             content_order,
             enabled_plugin_names,
         ));
     }
 
-    sort_content_plugins(data_paths, enabled_plugin_names)
+    sort_content_plugins(index, enabled_plugin_names)
 }
 
 fn resolve_explicit_content_order(
-    data_paths: &[PathBuf],
+    index: &PluginIndex,
     content_order: &[String],
     enabled_plugin_names: &[String],
 ) -> Vec<String> {
@@ -127,7 +129,7 @@ fn resolve_explicit_content_order(
         if !enabled.contains(&key) {
             continue;
         }
-        if find_plugin_in_data_paths(data_paths, name).is_none() {
+        if index.find(name).is_none() {
             continue;
         }
         if seen.insert(key) {
@@ -140,7 +142,7 @@ fn resolve_explicit_content_order(
         if !seen.insert(key) {
             continue;
         }
-        if find_plugin_in_data_paths(data_paths, name).is_some() {
+        if index.find(name).is_some() {
             result.push(name.clone());
         }
     }

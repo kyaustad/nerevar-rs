@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crc32fast::Hasher;
 
 use crate::instance_data::{RequiredDataFileEntry, ResolvedOpenMwConfig};
-use crate::openmw_ini_importer::find_plugin_in_data_paths;
+use crate::openmw_ini_importer::PluginIndex;
 
 const REQUIRED_DATA_FILES: &str = "requiredDataFiles.json";
 const SERVER_DATA_SUBDIR: &str = "server/data";
@@ -35,10 +35,11 @@ const FILE_HEADER: &str = r#"// This file lets you enforce a certain plugin list
 
 pub fn build_required_data_files(resolved: &ResolvedOpenMwConfig) -> Result<Vec<RequiredDataFileEntry>, String> {
     let data_paths = parse_data_paths(&resolved.data_paths);
+    let index = PluginIndex::build(&data_paths);
     let mut entries = Vec::new();
 
     for plugin in &resolved.content {
-        let path = resolve_plugin_path(&data_paths, plugin)?;
+        let path = resolve_plugin_path(&index, plugin)?;
         let computed = file_crc32_hex(&path)?;
         let checksums = merge_checksums(plugin, computed);
         entries.push(RequiredDataFileEntry {
@@ -127,8 +128,10 @@ fn strip_quotes(path: &str) -> String {
 }
 
 /// OpenMW resolves plugins from later `data=` paths first (same as Tes3MpPluginHelper).
-fn resolve_plugin_path(data_paths: &[PathBuf], plugin: &str) -> Result<PathBuf, String> {
-    find_plugin_in_data_paths(data_paths, plugin)
+fn resolve_plugin_path(index: &PluginIndex, plugin: &str) -> Result<PathBuf, String> {
+    index
+        .find(plugin)
+        .cloned()
         .ok_or_else(|| format!("Plugin not found on disk: {plugin}"))
 }
 

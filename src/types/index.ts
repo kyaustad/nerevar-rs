@@ -1,3 +1,5 @@
+export * from "./BackgroundOperationPhase";
+export * from "./BackgroundOperationProgressEvent";
 export * from "./GithubReleaseResponse";
 export * from "./GithubAssetResponse";
 export * from "./InstanceConfig";

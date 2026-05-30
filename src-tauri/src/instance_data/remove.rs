@@ -45,12 +45,14 @@ pub fn delete_package(
     save_load_order(data_dir, &load_order)?;
 
     if manifest_path(data_dir).exists() {
+        let mut no_progress = None;
         build_manifest(
             instance_id,
             instance_name,
             instance_root,
             data_dir,
             &load_order,
+            &mut no_progress,
         )?;
     }
 

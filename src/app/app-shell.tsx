@@ -1,5 +1,6 @@
 import { NerevarTitlebarLayout } from "@/components/custom/nerevar-titlebar";
 import { useConfig } from "@/features/config/context/config-context-provider";
+import { BackgroundOperationProvider } from "@/features/instances/context/background-operation-context";
 import { ProcessStatusProvider } from "@/features/instances/context/process-status-context";
 import { useCallback, type ReactNode } from "react";
 
@@ -21,8 +22,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 
   return (
-    <ProcessStatusProvider resolveInstanceName={resolveInstanceName}>
-      <NerevarTitlebarLayout>{children}</NerevarTitlebarLayout>
-    </ProcessStatusProvider>
+    <BackgroundOperationProvider>
+      <ProcessStatusProvider resolveInstanceName={resolveInstanceName}>
+        <NerevarTitlebarLayout>{children}</NerevarTitlebarLayout>
+      </ProcessStatusProvider>
+    </BackgroundOperationProvider>
   );
 }

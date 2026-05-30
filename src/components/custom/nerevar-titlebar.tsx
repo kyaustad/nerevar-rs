@@ -3,6 +3,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, X } from "lucide-react";
 import { ThemeSwitcher } from "./theme-switcher";
+import { BackgroundOperationBanner } from "./background-operation-banner";
 import { ProcessSideRailGate } from "./process-side-rails";
 import { SyncHostStatusBar } from "./sync-host-status-bar";
 import { TooltipProvider } from "../ui/tooltip";
@@ -21,6 +22,7 @@ export function NerevarTitlebarLayout({
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
         <ProcessSideRailGate side="right" />
       </div>
+      <BackgroundOperationBanner />
     </div>
   );
 }

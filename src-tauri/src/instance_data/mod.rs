@@ -8,6 +8,7 @@ mod manifest_compare;
 mod mo2_modlist;
 mod openmw_cfg;
 mod paths;
+mod progress;
 mod prune;
 mod remove;
 mod resolver;
@@ -24,6 +25,9 @@ pub use manifest_compare::manifests_differ;
 pub use openmw_cfg::{
     resolve_instance_openmw_config, write_ephemeral_openmw_cfg, write_instance_launch_cfg,
 };
+pub use progress::{
+    BackgroundOperationPhase, BackgroundOperationProgressEvent, ProgressEmitter,
+};
 pub use paths::{
     ensure_instance_data_layout, launch_cfg_path, manifest_path, package_abs_path,
     resolve_package_data_dir,
@@ -36,7 +40,10 @@ pub use types::*;
 #[cfg(test)]
 mod bindings {
     use super::types::{LoadOrder, NerevarManifest, RequiredDataFileEntry, ScannedPackage};
-    use crate::instance_data::{Mo2ModlistImportReport, Mo2ModlistImportResult};
+    use crate::instance_data::{
+        BackgroundOperationPhase, BackgroundOperationProgressEvent, Mo2ModlistImportReport,
+        Mo2ModlistImportResult,
+    };
     use crate::data::{InstanceConfig, NewConnectionConfig};
     use crate::process_manager::types::ProcessRole;
     use crate::sync_client::types::{
@@ -66,5 +73,8 @@ mod bindings {
         ProcessRole::export(&cfg).expect("export ProcessRole");
         RequiredDataFileEntry::export_all(&cfg).expect("export RequiredDataFileEntry");
         SyncHostStatus::export_all(&cfg).expect("export SyncHostStatus");
+        BackgroundOperationProgressEvent::export_all(&cfg)
+            .expect("export BackgroundOperationProgressEvent");
+        BackgroundOperationPhase::export(&cfg).expect("export BackgroundOperationPhase");
     }
 }

@@ -20,7 +20,7 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <ConfigContextProvider>
       <AppShell>
         <ParticlesProvider init={initParticlesEngine}>
-          <Toaster richColors />
+          <Toaster richColors position="top-center" />
           <OnboardingManager
             onComplete={() => {
               invoke("complete_onboarding");

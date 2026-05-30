@@ -1,5 +1,5 @@
 [package]
-name = "nerevar-rs"
+name = "nerevar"
 version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]
@@ -39,3 +39,4 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 urlencoding = "2.1.3"
 crc32fast = "1.4.2"
 csv = "1.3"
+rayon = "1.10"

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use super::paths::package_abs_path;
@@ -35,7 +36,7 @@ pub fn resolve_load_order(data_dir: &Path, load_order: &LoadOrder) -> Result<Res
         }
     }
 
-    let mut content = sort_content_plugins(&data_paths, &plugin_names)?;
+    let mut content = resolve_content_plugins(load_order, &data_paths, &plugin_names)?;
 
     if let Some(base_path) = load_order
         .base_game_data
@@ -92,6 +93,61 @@ pub fn resolve_synced_load_order(
     })
 }
 
+fn resolve_content_plugins(
+    load_order: &LoadOrder,
+    data_paths: &[PathBuf],
+    enabled_plugin_names: &[String],
+) -> Result<Vec<String>, String> {
+    if let Some(content_order) = &load_order.content_order {
+        return Ok(resolve_explicit_content_order(
+            data_paths,
+            content_order,
+            enabled_plugin_names,
+        ));
+    }
+
+    sort_content_plugins(data_paths, enabled_plugin_names)
+}
+
+fn resolve_explicit_content_order(
+    data_paths: &[PathBuf],
+    content_order: &[String],
+    enabled_plugin_names: &[String],
+) -> Vec<String> {
+    let enabled: HashSet<String> = enabled_plugin_names
+        .iter()
+        .map(|name| name.to_ascii_lowercase())
+        .collect();
+
+    let mut result = Vec::new();
+    let mut seen = HashSet::new();
+
+    for name in content_order {
+        let key = name.to_ascii_lowercase();
+        if !enabled.contains(&key) {
+            continue;
+        }
+        if find_plugin_in_data_paths(data_paths, name).is_none() {
+            continue;
+        }
+        if seen.insert(key) {
+            result.push(name.clone());
+        }
+    }
+
+    for name in enabled_plugin_names {
+        let key = name.to_ascii_lowercase();
+        if !seen.insert(key) {
+            continue;
+        }
+        if find_plugin_in_data_paths(data_paths, name).is_some() {
+            result.push(name.clone());
+        }
+    }
+
+    result
+}
+
 fn strip_quotes(path: &str) -> String {
     let trimmed = path.trim();
     trimmed
@@ -135,6 +191,7 @@ mod tests {
         let load_order = LoadOrder {
             version: LOAD_ORDER_VERSION,
             base_game_data: None,
+            content_order: None,
             entries: vec![
                 LoadOrderEntry {
                     id: "1".into(),
@@ -179,6 +236,7 @@ mod tests {
         let load_order = LoadOrder {
             version: LOAD_ORDER_VERSION,
             base_game_data: None,
+            content_order: None,
             entries: vec![LoadOrderEntry {
                 id: "1".into(),
                 name: "Better Bodies".into(),

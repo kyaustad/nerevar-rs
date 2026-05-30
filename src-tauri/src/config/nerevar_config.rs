@@ -396,63 +396,13 @@ pub async fn add_instance(
 // }
 
 pub async fn validate_global_openmw_config() -> Result<bool, String> {
-    let documents_dir =
-        dirs::document_dir().ok_or_else(|| "Failed to resolve documents directory".to_string())?;
-    let openmw_cfg_path = Path::new(&documents_dir).join("My Games/OpenMW/openmw.cfg");
-    if !openmw_cfg_path.exists() {
-        info!(
-            "OpenMW config file not found at {}",
-            openmw_cfg_path.display()
-        );
-        return Ok(false);
-    }
-    let contents = std::fs::read_to_string(&openmw_cfg_path).map_err(|e| e.to_string())?;
-    if contents.contains("data=") && contents.contains("Morrowind\\Data Files") {
-        return Ok(true);
-    } else {
-        info!(
-            "OpenMW config file exists but is invalid at {}",
-            openmw_cfg_path.display()
-        );
-        return Ok(false);
-    }
+    crate::openmw_ini_importer::validate_nerevar_openmw_scaffold()
 }
 
 pub async fn generate_default_global_openmw_config(
     morrowind_installation_path: String,
 ) -> Result<(), String> {
-    use crate::openmw_ini_importer::{
-        import_morrowind_ini, quote_data_path, resolve_morrowind_ini, ImportOptions, IniEncoding,
-        MultiStrMap,
-    };
-
-    let documents_dir =
-        dirs::document_dir().ok_or_else(|| "Failed to resolve documents directory".to_string())?;
-    let openmw_cfg_path = Path::new(&documents_dir).join("My Games/OpenMW/openmw.cfg");
-    if openmw_cfg_path.exists() {
-        return Ok(());
-    }
-
-    let data_files_path = Path::new(&morrowind_installation_path);
-    let morrowind_ini = resolve_morrowind_ini(data_files_path).ok_or_else(|| {
-        format!(
-            "Could not find Morrowind.ini near {}",
-            data_files_path.display()
-        )
-    })?;
-
-    let mut seed = MultiStrMap::new();
-    seed.insert("encoding".to_string(), vec!["win1252".to_string()]);
-    seed.insert("data".to_string(), vec![quote_data_path(data_files_path)]);
-
-    import_morrowind_ini(
-        &morrowind_ini,
-        &openmw_cfg_path,
-        seed,
-        ImportOptions {
-            encoding: IniEncoding::Win1252,
-            import_game_files: true,
-            import_archives: true,
-        },
-    )
+    crate::openmw_ini_importer::setup_nerevar_openmw_scaffold(Path::new(
+        &morrowind_installation_path,
+    ))
 }

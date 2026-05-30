@@ -29,7 +29,10 @@ const SECTION_LABEL =
 
 function buildConnectionRootPath(rootPath: string, name: string): string {
   const base = rootPath.replace(/\//g, "\\").replace(/\\+$/, "");
-  const folder = name.trim().replace(/[<>:"/\\|?*]/g, "").trim();
+  const folder = name
+    .trim()
+    .replace(/[<>:"/\\|?*]/g, "")
+    .trim();
   if (!base) return folder;
   if (!folder) return base;
   return `${base}\\${folder}`;
@@ -63,8 +66,14 @@ export function NewConnectionPage() {
 
   useEffect(() => {
     const root = config?.rootPath ?? "";
-    form.setValue("instanceRootPath", buildConnectionRootPath(root, connectionName));
-    form.setValue("instanceDataDir", buildConnectionDataDir(root, connectionName));
+    form.setValue(
+      "instanceRootPath",
+      buildConnectionRootPath(root, connectionName),
+    );
+    form.setValue(
+      "instanceDataDir",
+      buildConnectionDataDir(root, connectionName),
+    );
   }, [connectionName, config?.rootPath, form]);
 
   const testConnection = async () => {
@@ -142,7 +151,7 @@ export function NewConnectionPage() {
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-1 pb-10">
       <Button
-        variant="ghost"
+        variant="outline"
         size="sm"
         className="w-fit font-display text-xs tracking-[0.2em] text-foreground/70 uppercase hover:text-accent"
         asChild
@@ -160,8 +169,8 @@ export function NewConnectionPage() {
               New connection
             </h1>
             <p className="mt-2 font-serif text-sm text-foreground/75">
-              Connect to a Nerevar host, download its manifest, and sync mod data
-              into a local TES3MP instance.
+              Connect to a Nerevar host, download its manifest, and sync mod
+              data into a local TES3MP instance.
             </p>
           </div>
 
@@ -189,14 +198,21 @@ export function NewConnectionPage() {
               <FieldLabel className={SECTION_LABEL} htmlFor="connectionName">
                 Connection name
               </FieldLabel>
-              <Input id="connectionName" disabled={busy} {...form.register("connectionName")} />
+              <Input
+                id="connectionName"
+                disabled={busy}
+                {...form.register("connectionName")}
+              />
               {form.formState.errors.connectionName ? (
                 <FieldError errors={[form.formState.errors.connectionName]} />
               ) : null}
             </Field>
 
             <Field>
-              <FieldLabel className={SECTION_LABEL} htmlFor="connectionDescription">
+              <FieldLabel
+                className={SECTION_LABEL}
+                htmlFor="connectionDescription"
+              >
                 Description
               </FieldLabel>
               <Textarea
@@ -211,7 +227,11 @@ export function NewConnectionPage() {
                 <FieldLabel className={SECTION_LABEL} htmlFor="remoteHost">
                   Nerevar host
                 </FieldLabel>
-                <Input id="remoteHost" disabled={busy} {...form.register("remoteHost")} />
+                <Input
+                  id="remoteHost"
+                  disabled={busy}
+                  {...form.register("remoteHost")}
+                />
                 {form.formState.errors.remoteHost ? (
                   <FieldError errors={[form.formState.errors.remoteHost]} />
                 ) : null}
@@ -287,7 +307,12 @@ export function NewConnectionPage() {
                 )}
                 Test connection
               </Button>
-              <Button type="submit" variant="launch" disabled={busy} className="flex-1">
+              <Button
+                type="submit"
+                variant="launch"
+                disabled={busy}
+                className="flex-1"
+              >
                 {creating || sync.syncing ? (
                   <Loader2 className="animate-spin" data-icon="inline-start" />
                 ) : (

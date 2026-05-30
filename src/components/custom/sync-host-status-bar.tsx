@@ -35,7 +35,11 @@ export function SyncHostStatusBar() {
     <div className="flex h-9 shrink-0 items-center gap-3 border-b border-border/40 bg-background/60 px-3 text-xs">
       <StatusDot
         online={serverOnline}
-        label={serverOnline ? `Sync server online · :${status.syncPort}` : `Sync server offline · :${status.syncPort}`}
+        label={
+          serverOnline
+            ? `Sync server online · :${status.syncPort}`
+            : `Sync server offline · :${status.syncPort}`
+        }
       />
 
       <span className="hidden text-foreground/30 sm:inline">|</span>
@@ -74,13 +78,15 @@ export function SyncHostStatusBar() {
       <div className="ml-auto flex shrink-0 items-center gap-1">
         {hosting && status.hostingInstanceId ? (
           <>
-            <Button variant="ghost" size="xs" className="h-7 px-2" asChild>
-              <Link href={`/instances/${encodeURIComponent(status.hostingInstanceId)}`}>
+            <Button variant="outline" size="xs" className="h-7 px-2" asChild>
+              <Link
+                href={`/instances/${encodeURIComponent(status.hostingInstanceId)}`}
+              >
                 View
               </Link>
             </Button>
             <Button
-              variant="ghost"
+              variant="outline"
               size="xs"
               className="h-7 px-2 text-foreground/70 hover:text-destructive"
               onClick={() => void handleStopHosting()}

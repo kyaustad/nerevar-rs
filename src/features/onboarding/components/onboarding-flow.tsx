@@ -282,7 +282,7 @@ function MorrowindInstallationStep({ onNext }: { onNext: () => void }) {
       morrowindInstallationPath,
     })
       .then(() => {
-        toast.success("Default OpenMW config generated");
+        toast.success("Nerevar OpenMW scaffold created");
         validateOpenMWConfig();
       })
       .catch((error) => {
@@ -306,15 +306,19 @@ function MorrowindInstallationStep({ onNext }: { onNext: () => void }) {
           Locate Morrowind Installation
         </CardTitle>
         <CardDescription className="font-serif text-base font-light tracking-[0.05em] leading-relaxed text-foreground/75">
-          {`If you have launched or installed OpenMW before, you should have the needed`}
+          Nerevar keeps your personal{" "}
           <code className="font-mono text-sm text-accent bg-secondary/70 p-1 whitespace-nowrap">
-            OpenMW.cfg
-          </code>
-          {` file in your`}
+            openmw.cfg
+          </code>{" "}
+          untouched. We back it up to{" "}
           <code className="font-mono text-sm text-accent bg-secondary/70 p-1 whitespace-nowrap">
-            {`Documents\\My Games\\OpenMW`}
-          </code>
-          {` folder. If that file doesn't exist, Nerevar will create a default one for you using your Morrowind Installation location.`}
+            openmw.backup.cfg
+          </code>{" "}
+          and create{" "}
+          <code className="font-mono text-sm text-accent bg-secondary/70 p-1 whitespace-nowrap">
+            openmw.nerevar.cfg
+          </code>{" "}
+          as the base config used when launching TES3MP through Nerevar.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 px-6 py-5">
@@ -332,7 +336,10 @@ function MorrowindInstallationStep({ onNext }: { onNext: () => void }) {
                   strokeWidth={2}
                 />
               </motion.div>
-              <p className="text-sm text-accent max-w-xs text-center">{`Your OpenMW config appears to be valid! You can continue to the next step.`}</p>
+              <p className="text-sm text-accent max-w-xs text-center">
+                Nerevar OpenMW scaffold is ready. Your existing global config was preserved in{" "}
+                <code className="font-mono text-xs">openmw.backup.cfg</code> if one existed.
+              </p>
             </div>
           </div>
         ) : (
@@ -346,7 +353,10 @@ function MorrowindInstallationStep({ onNext }: { onNext: () => void }) {
               >
                 <XIcon className="size-8 text-destructive" strokeWidth={2} />
               </motion.div>
-              <p className="text-sm text-accent max-w-xs text-center">{`OpenMW config is invalid or missing. Nerevar will generate a default one for you.`}</p>
+              <p className="text-sm text-accent max-w-xs text-center">
+                Select your Morrowind.esm file so Nerevar can create{" "}
+                <code className="font-mono text-xs">openmw.nerevar.cfg</code>.
+              </p>
             </div>
             <Label
               htmlFor="morrowind-installation-path"
@@ -381,7 +391,7 @@ function MorrowindInstallationStep({ onNext }: { onNext: () => void }) {
               }
               onClick={handleGenerateDefaultOpenMWConfig}
             >
-              Generate Default Config
+              Generate Nerevar OpenMW scaffold
             </Button>
           </div>
         )}

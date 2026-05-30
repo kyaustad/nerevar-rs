@@ -34,7 +34,10 @@ export function SyncProgressPanel({
 
   const percent =
     progress && progress.bytesTotal > 0
-      ? Math.min(100, Math.round((progress.bytesDone / progress.bytesTotal) * 100))
+      ? Math.min(
+          100,
+          Math.round((progress.bytesDone / progress.bytesTotal) * 100),
+        )
       : progress?.phase === "complete"
         ? 100
         : 0;
@@ -48,13 +51,15 @@ export function SyncProgressPanel({
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          {syncing ? <Loader2 className="size-4 animate-spin text-accent" /> : null}
+          {syncing ? (
+            <Loader2 className="size-4 animate-spin text-accent" />
+          ) : null}
           <span className="font-display text-xs tracking-[0.15em] text-accent uppercase">
             {progress ? PHASE_LABELS[progress.phase] : "Syncing"}
           </span>
         </div>
         {syncing && onCancel ? (
-          <Button variant="ghost" size="sm" onClick={onCancel}>
+          <Button variant="outline" size="sm" onClick={onCancel}>
             <X data-icon="inline-start" />
             Cancel
           </Button>
@@ -77,7 +82,8 @@ export function SyncProgressPanel({
 
       {progress && progress.bytesTotal > 0 ? (
         <p className="text-[0.65rem] text-foreground/55">
-          {formatByteSize(progress.bytesDone)} / {formatByteSize(progress.bytesTotal)}
+          {formatByteSize(progress.bytesDone)} /{" "}
+          {formatByteSize(progress.bytesTotal)}
         </p>
       ) : null}
     </div>

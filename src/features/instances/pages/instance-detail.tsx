@@ -8,10 +8,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ProcessConsole } from "@/features/instances/components/process-console";
 import { SyncProgressPanel } from "@/features/instances/components/sync-progress-panel";
 import { useConfig } from "@/features/config/context/config-context-provider";
 import { useInstanceProcess } from "@/features/instances/hooks/use-instance-process";
+import { useProcessStatus } from "@/features/instances/context/process-status-context";
 import { useInstanceSync } from "@/features/instances/hooks/use-instance-sync";
 import { cn } from "@/lib/utils";
 import { InstanceConfig } from "@/types";
@@ -27,9 +27,6 @@ import {
   Square,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
-import type { SyncProgressEvent } from "@/types";
 import { toast } from "sonner";
 import { Link, useParams } from "wouter";
 
@@ -50,7 +47,9 @@ export function InstanceDetailPage() {
   const id = params.id ?? "unknown";
 
   const config = useConfig();
-  const ownedInstance = config?.ownedInstances?.find((instance) => instance.id === id);
+  const ownedInstance = config?.ownedInstances?.find(
+    (instance) => instance.id === id,
+  );
   const syncedInstance = config?.syncedInstances?.find(
     (instance) => instance.id === id,
   );
@@ -98,7 +97,7 @@ function InstanceDetailShell({
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-1 pb-8">
       <Button
-        variant="ghost"
+        variant="outline"
         size="sm"
         className="w-fit font-display text-sm tracking-[0.2em] text-foreground/70 uppercase hover:text-accent"
         asChild
@@ -131,7 +130,9 @@ function InstanceDetailShell({
             {instance.description || "No description provided."}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-5 py-5">{children}</CardContent>
+        <CardContent className="flex flex-col gap-5 py-5">
+          {children}
+        </CardContent>
       </Card>
     </div>
   );
@@ -169,7 +170,9 @@ function PathRow({ label, path }: { label: string; path: string }) {
       <span className="font-display text-[0.7rem] tracking-[0.15em] text-foreground/55 uppercase">
         {label}
       </span>
-      <code className="truncate font-mono text-[0.8rem] text-foreground/80">{path}</code>
+      <code className="truncate font-mono text-[0.8rem] text-foreground/80">
+        {path}
+      </code>
     </div>
   );
 }
@@ -178,39 +181,29 @@ function ClientPlayControls({
   instanceId,
   description,
   synced = false,
+  syncBusy = false,
 }: {
   instanceId: string;
   description: string;
   synced?: boolean;
+  syncBusy?: boolean;
 }) {
   const client = useInstanceProcess(instanceId, "client", synced);
-  const [launchProgress, setLaunchProgress] = useState<SyncProgressEvent | null>(
-    null,
-  );
-
-  useEffect(() => {
-    if (!synced) return;
-    const unlisten = listen<SyncProgressEvent>("sync-progress", (event) => {
-      if (event.payload.instanceId !== instanceId) return;
-      setLaunchProgress(event.payload);
-    });
-    return () => {
-      void unlisten.then((fn) => fn());
-    };
-  }, [instanceId, synced]);
+  const { client: globalClient } = useProcessStatus();
+  const launchBlocked =
+    !client.canLaunch ||
+    (globalClient.instanceId !== null &&
+      globalClient.instanceId !== instanceId &&
+      (globalClient.running || globalClient.launching));
 
   return (
     <DetailSection title="Play" description={description}>
-      {synced && (client.launching || launchProgress) ? (
-        <SyncProgressPanel
-          progress={launchProgress}
-          syncing={client.launching}
-        />
-      ) : null}
       <Button
         variant="launch"
         className="h-10 w-full text-base"
-        disabled={client.running || client.launching}
+        disabled={
+          client.running || client.launching || launchBlocked || syncBusy
+        }
         onClick={() => void client.launch()}
       >
         <Play data-icon="inline-start" />
@@ -219,19 +212,19 @@ function ClientPlayControls({
       <Button
         variant="outline"
         size="sm"
-        className="w-full"
+        className="h-10 w-full text-base"
         disabled={!client.running}
         onClick={() => void client.stop()}
       >
         <Square data-icon="inline-start" />
         Stop client
       </Button>
-      <ProcessConsole
-        title="Client output"
-        lines={client.lines}
-        running={client.running}
-        onClear={client.clear}
-      />
+      {launchBlocked && !client.running ? (
+        <p className="font-serif text-sm text-foreground/60">
+          Another client is already running. Stop it from the right side panel
+          first.
+        </p>
+      ) : null}
     </DetailSection>
   );
 }
@@ -239,6 +232,18 @@ function ClientPlayControls({
 function OwnedPlaySection({ instance }: { instance: InstanceConfig }) {
   const client = useInstanceProcess(instance.id, "client");
   const server = useInstanceProcess(instance.id, "server");
+  const { client: globalClient, server: globalServer } = useProcessStatus();
+
+  const clientBlocked =
+    !client.canLaunch ||
+    (globalClient.instanceId !== null &&
+      globalClient.instanceId !== instance.id &&
+      (globalClient.running || globalClient.launching));
+  const serverBlocked =
+    !server.canLaunch ||
+    (globalServer.instanceId !== null &&
+      globalServer.instanceId !== instance.id &&
+      (globalServer.running || globalServer.launching));
 
   return (
     <>
@@ -250,7 +255,7 @@ function OwnedPlaySection({ instance }: { instance: InstanceConfig }) {
           <Button
             variant="launch"
             className="h-10 w-full text-base"
-            disabled={client.running}
+            disabled={client.running || client.launching || clientBlocked}
             onClick={() => void client.launch()}
           >
             <Play data-icon="inline-start" />
@@ -259,7 +264,7 @@ function OwnedPlaySection({ instance }: { instance: InstanceConfig }) {
           <Button
             variant="server"
             className="h-10 w-full text-base"
-            disabled={server.running}
+            disabled={server.running || server.launching || serverBlocked}
             onClick={() => void server.launch()}
           >
             <Server data-icon="inline-start" />
@@ -269,7 +274,7 @@ function OwnedPlaySection({ instance }: { instance: InstanceConfig }) {
         <div className="grid gap-2 sm:grid-cols-2">
           <Button
             variant="outline"
-            size="sm"
+            className="h-10 w-full text-base"
             disabled={!client.running}
             onClick={() => void client.stop()}
           >
@@ -278,7 +283,7 @@ function OwnedPlaySection({ instance }: { instance: InstanceConfig }) {
           </Button>
           <Button
             variant="outline"
-            size="sm"
+            className="h-10 w-full text-base"
             disabled={!server.running}
             onClick={() => void server.stop()}
           >
@@ -286,20 +291,19 @@ function OwnedPlaySection({ instance }: { instance: InstanceConfig }) {
             Stop server
           </Button>
         </div>
+        {clientBlocked && !client.running ? (
+          <p className="font-serif text-sm text-foreground/60">
+            Another client is already running. Stop it from the right side panel
+            first.
+          </p>
+        ) : null}
+        {serverBlocked && !server.running ? (
+          <p className="font-serif text-sm text-foreground/60">
+            Another server is already running. Stop it from the left side panel
+            first.
+          </p>
+        ) : null}
       </DetailSection>
-
-      <ProcessConsole
-        title="Client output"
-        lines={client.lines}
-        running={client.running}
-        onClear={client.clear}
-      />
-      <ProcessConsole
-        title="Server output"
-        lines={server.lines}
-        running={server.running}
-        onClear={server.clear}
-      />
     </>
   );
 }
@@ -332,8 +336,8 @@ function OwnedInstanceDetail({ instance }: { instance: InstanceConfig }) {
           Start hosting last manifest
         </Button>
         <p className="font-serif text-sm leading-relaxed text-foreground/60">
-          To regenerate the manifest after changing mods, open the data manager and use
-          &quot;Save &amp; host manifest&quot;.
+          To regenerate the manifest after changing mods, open the data manager
+          and use &quot;Save &amp; host manifest&quot;.
         </p>
         <Button variant="secondary" className="h-10 w-full" asChild>
           <Link href={`/instances/${encodeURIComponent(instance.id)}/data`}>
@@ -345,12 +349,17 @@ function OwnedInstanceDetail({ instance }: { instance: InstanceConfig }) {
 
       <Separator className="bg-border/60" />
 
-      <DetailSection title="Directories" description="Open instance folders on disk.">
+      <DetailSection
+        title="Directories"
+        description="Open instance folders on disk."
+      >
         <div className="grid gap-2 sm:grid-cols-2">
           <Button
             variant="outline"
             className="h-10 w-full font-display text-base tracking-[0.15em] uppercase"
-            onClick={() => invoke<void>("open_directory", { path: instance.path })}
+            onClick={() =>
+              invoke<void>("open_directory", { path: instance.path })
+            }
           >
             <FolderOpen data-icon="inline-start" />
             Instance folder
@@ -358,7 +367,9 @@ function OwnedInstanceDetail({ instance }: { instance: InstanceConfig }) {
           <Button
             variant="outline"
             className="h-10 w-full font-display text-base tracking-[0.15em] uppercase"
-            onClick={() => invoke<void>("open_directory", { path: instance.dataDir })}
+            onClick={() =>
+              invoke<void>("open_directory", { path: instance.dataDir })
+            }
           >
             <FolderOpen data-icon="inline-start" />
             Data folder
@@ -373,8 +384,28 @@ function OwnedInstanceDetail({ instance }: { instance: InstanceConfig }) {
   );
 }
 
+function SyncedInstanceSyncPanel({
+  sync,
+  clientLaunching,
+}: {
+  sync: ReturnType<typeof useInstanceSync>;
+  clientLaunching: boolean;
+}) {
+  const active = sync.syncing || clientLaunching;
+
+  return (
+    <SyncProgressPanel
+      progress={sync.progress}
+      syncing={active}
+      onCancel={active ? () => void sync.cancelSync() : undefined}
+    />
+  );
+}
+
 function SyncedInstanceDetail({ instance }: { instance: InstanceConfig }) {
   const sync = useInstanceSync(instance.id);
+  const client = useInstanceProcess(instance.id, "client", true);
+  const syncBusy = sync.syncing || client.launching;
 
   return (
     <InstanceDetailShell
@@ -383,6 +414,8 @@ function SyncedInstanceDetail({ instance }: { instance: InstanceConfig }) {
       kindLabel="Synced"
       instance={instance}
     >
+      <SyncedInstanceSyncPanel sync={sync} clientLaunching={client.launching} />
+
       <DetailSection
         title="Connection"
         description={
@@ -398,10 +431,10 @@ function SyncedInstanceDetail({ instance }: { instance: InstanceConfig }) {
               "h-10 w-full font-display text-base tracking-[0.15em] uppercase",
               "border-accent/40 hover:border-accent/60 hover:bg-accent/5",
             )}
-            disabled={sync.syncing}
+            disabled={syncBusy || client.running || client.launching}
             onClick={() => void sync.startSync()}
           >
-            {sync.syncing ? (
+            {syncBusy ? (
               <RefreshCw className="animate-spin" data-icon="inline-start" />
             ) : (
               <Network data-icon="inline-start" />
@@ -411,17 +444,12 @@ function SyncedInstanceDetail({ instance }: { instance: InstanceConfig }) {
           <Button
             variant="secondary"
             className="h-10 w-full"
-            disabled={sync.syncing}
+            disabled={syncBusy || client.running || client.launching}
             onClick={() => void sync.cancelSync()}
           >
             Cancel sync
           </Button>
         </div>
-        <SyncProgressPanel
-          progress={sync.progress}
-          syncing={sync.syncing}
-          onCancel={() => void sync.cancelSync()}
-        />
       </DetailSection>
 
       <Separator className="bg-border/60" />
@@ -429,17 +457,23 @@ function SyncedInstanceDetail({ instance }: { instance: InstanceConfig }) {
       <ClientPlayControls
         instanceId={instance.id}
         synced
+        syncBusy={syncBusy}
         description="Checks the host for mod updates, syncs if needed, then connects to the TES3MP server."
       />
 
       <Separator className="bg-border/60" />
 
-      <DetailSection title="Directories" description="Open instance folders on disk.">
+      <DetailSection
+        title="Directories"
+        description="Open instance folders on disk."
+      >
         <div className="grid gap-2 sm:grid-cols-2">
           <Button
             variant="outline"
             className="h-10 w-full"
-            onClick={() => invoke<void>("open_directory", { path: instance.path })}
+            onClick={() =>
+              invoke<void>("open_directory", { path: instance.path })
+            }
           >
             <FolderOpen data-icon="inline-start" />
             Instance folder
@@ -447,7 +481,9 @@ function SyncedInstanceDetail({ instance }: { instance: InstanceConfig }) {
           <Button
             variant="outline"
             className="h-10 w-full"
-            onClick={() => invoke<void>("open_directory", { path: instance.dataDir })}
+            onClick={() =>
+              invoke<void>("open_directory", { path: instance.dataDir })
+            }
           >
             <FolderOpen data-icon="inline-start" />
             Data folder

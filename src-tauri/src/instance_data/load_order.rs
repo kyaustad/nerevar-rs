@@ -69,7 +69,9 @@ pub fn merge_scanned_with_data_dir(
         {
             existing.name = package.name;
             existing.kind = package.kind;
-            existing.tree_checksum = Some(package.tree_checksum);
+            if let Some(tree_checksum) = package.tree_checksum {
+                existing.tree_checksum = Some(tree_checksum);
+            }
             sync_plugins(existing, &package.plugins);
             continue;
         }
@@ -92,7 +94,7 @@ pub fn merge_scanned_with_data_dir(
             enabled: true,
             priority: max_priority + 10,
             plugins,
-            tree_checksum: Some(package.tree_checksum),
+            tree_checksum: package.tree_checksum,
         });
     }
 

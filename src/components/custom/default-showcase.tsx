@@ -66,7 +66,7 @@ function InstanceCard({
 
         <CardAction>
           <Button
-            variant="ghost"
+            variant="outline"
             size="icon-sm"
             className="text-accent/60 hover:text-accent"
           >
@@ -187,7 +187,7 @@ function App() {
             <ThemeSwitcher />
 
             <Button
-              variant="ghost"
+              variant="outline"
               size="icon"
               className="text-accent hover:text-accent"
             >

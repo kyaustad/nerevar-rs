@@ -23,6 +23,7 @@ pub fn apply_manifest_to_load_order(
     let load_order = LoadOrder {
         version: LOAD_ORDER_VERSION,
         base_game_data,
+        content_order: None,
         entries: packages
             .into_iter()
             .map(|pkg| LoadOrderEntry {

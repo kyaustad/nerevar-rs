@@ -8,10 +8,10 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 use crate::instance_data::{
-    resolve_instance_openmw_config, write_tes3mp_launch_openmw_cfg,
+    launch_cfg_path, resolve_instance_openmw_config, write_instance_launch_cfg,
 };
 use crate::instance_setup::{instance_tes3mp_dir, write_required_data_files_for_resolved};
-use crate::openmw_ini_importer::begin_global_openmw_launch_patch;
+use crate::openmw_ini_importer::begin_global_openmw_launch;
 use crate::sync_client::types::{ProcessOutputEvent, ProcessStatusEvent, ProcessStream};
 
 use super::state::{spawn_exit_watcher, ProcessManager};
@@ -19,6 +19,25 @@ use super::types::ProcessRole;
 
 const CLIENT_EXE_NAMES: &[&str] = &["tes3mp.exe", "TES3MP.exe", "openmw.exe", "OpenMW.exe"];
 const SERVER_EXE_NAMES: &[&str] = &["tes3mp-server.exe", "TES3MP-server.exe"];
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+fn configure_tes3mp_command(command: &mut Command, working_dir: &Path) {
+    command
+        .current_dir(working_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    // Console-subsystem children otherwise get a blank terminal when launched from
+    // our GUI app. Output is still captured via the pipes above.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+}
 
 pub fn find_executable(root: &Path, names: &[&str], max_depth: u32) -> Option<PathBuf> {
     if max_depth == 0 {
@@ -73,34 +92,33 @@ fn pipe_process_output(
     });
 }
 
-fn prepare_launch_cfg(instance_root: &Path, data_dir: &Path) -> Result<PathBuf, String> {
+fn prepare_launch_cfg(data_dir: &Path) -> Result<PathBuf, String> {
     let resolved = resolve_instance_openmw_config(data_dir)?;
-    let tes3mp_dir = instance_tes3mp_dir(instance_root);
-    write_tes3mp_launch_openmw_cfg(&tes3mp_dir, data_dir, &resolved)
+    write_instance_launch_cfg(data_dir, &resolved)?;
+    Ok(launch_cfg_path(data_dir))
 }
 
 pub fn launch_tes3mp_client(
     app: AppHandle,
-    manager: std::sync::Arc<ProcessManager>,
+    manager: Arc<ProcessManager>,
     instance_id: &str,
     instance_root: &Path,
     data_dir: &Path,
 ) -> Result<(), String> {
-    let global_patch = begin_global_openmw_launch_patch()?;
-    if let Some(patch) = global_patch {
-        manager.store_global_openmw_patch(patch)?;
-    }
-
-    let cfg_path = match prepare_launch_cfg(instance_root, data_dir) {
+    let launch_cfg = match prepare_launch_cfg(data_dir) {
         Ok(path) => path,
-        Err(err) => {
-            manager.restore_global_openmw_patch_if_any();
-            return Err(err);
-        }
+        Err(err) => return Err(err),
     };
+
+    let global_session = match begin_global_openmw_launch(&launch_cfg) {
+        Ok(session) => session,
+        Err(err) => return Err(err),
+    };
+    manager.store_global_openmw_session(global_session)?;
+
     let tes3mp_dir = instance_tes3mp_dir(instance_root);
     let exe = find_executable(&tes3mp_dir, CLIENT_EXE_NAMES, 5).ok_or_else(|| {
-        manager.restore_global_openmw_patch_if_any();
+        manager.restore_global_openmw_session_if_any();
         format!(
             "Could not find TES3MP client executable under {}",
             tes3mp_dir.display()
@@ -108,20 +126,20 @@ pub fn launch_tes3mp_client(
     })?;
 
     let mut command = Command::new(&exe);
-    command
-        .current_dir(exe.parent().unwrap_or(&tes3mp_dir))
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    configure_tes3mp_command(
+        &mut command,
+        exe.parent().unwrap_or(&tes3mp_dir),
+    );
 
     tauri_plugin_log::log::info!(
-        "Launching TES3MP client with openmw.cfg at {}",
-        cfg_path.display()
+        "Launching TES3MP client using global openmw.cfg swap and launch overlay at {}",
+        launch_cfg.display()
     );
 
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(err) => {
-            manager.restore_global_openmw_patch_if_any();
+            manager.restore_global_openmw_session_if_any();
             return Err(format!("Failed to launch TES3MP client: {err}"));
         }
     };
@@ -150,7 +168,7 @@ pub fn launch_tes3mp_client(
 
     thread::sleep(Duration::from_millis(900));
     if let Ok(Some(status)) = child.try_wait() {
-        manager.restore_global_openmw_patch_if_any();
+        manager.restore_global_openmw_session_if_any();
         return Err(format!(
             "TES3MP client exited immediately (code {:?}). Check the client output console below.",
             status.code()
@@ -180,12 +198,12 @@ pub fn launch_tes3mp_client(
 
 pub fn launch_tes3mp_server(
     app: AppHandle,
-    manager: std::sync::Arc<ProcessManager>,
+    manager: Arc<ProcessManager>,
     instance_id: &str,
     instance_root: &Path,
     data_dir: &Path,
 ) -> Result<(), String> {
-    let _cfg_path = prepare_launch_cfg(instance_root, data_dir)?;
+    let _launch_cfg = prepare_launch_cfg(data_dir)?;
     let tes3mp_dir = instance_tes3mp_dir(instance_root);
     let resolved = resolve_instance_openmw_config(data_dir)?;
     write_required_data_files_for_resolved(&tes3mp_dir, &resolved)?;
@@ -197,10 +215,10 @@ pub fn launch_tes3mp_server(
     })?;
 
     let mut command = Command::new(&exe);
-    command
-        .current_dir(exe.parent().unwrap_or(&tes3mp_dir))
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    configure_tes3mp_command(
+        &mut command,
+        exe.parent().unwrap_or(&tes3mp_dir),
+    );
 
     let mut child = command
         .spawn()

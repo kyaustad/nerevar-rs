@@ -25,3 +25,11 @@ impl ProcessRole {
         }
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct GlobalProcessStatus {
+    pub client_instance_id: Option<String>,
+    pub server_instance_id: Option<String>,
+}

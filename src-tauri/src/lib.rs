@@ -19,7 +19,7 @@ use crate::process_manager::ProcessManager;
 use crate::sync_client::SyncCoordinator;
 use crate::sync_host::new_shared_sync_host;
 use std::sync::{Arc, Mutex};
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
 use tauri::State;
 use tokio::sync::watch;
 
@@ -55,6 +55,11 @@ async fn complete_onboarding(state: State<'_, Mutex<AppState>>) -> Result<(), St
 #[tauri::command]
 fn open_directory_picker() -> Result<String, String> {
     file_actions::open_directory_picker().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn open_csv_file_picker() -> Result<String, String> {
+    file_actions::open_csv_file_picker().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -204,6 +209,7 @@ pub fn run() {
             load_or_create_nerevar_config,
             complete_onboarding,
             open_directory_picker,
+            open_csv_file_picker,
             open_esm_file_picker,
             open_directory,
             set_root_path,
@@ -214,6 +220,8 @@ pub fn run() {
             instance_data::commands::scan_instance_data,
             instance_data::commands::get_instance_load_order,
             instance_data::commands::save_instance_load_order,
+            instance_data::commands::delete_instance_package,
+            instance_data::commands::import_mo2_modlist_csv,
             instance_data::commands::resolve_instance_openmw,
             instance_data::commands::write_instance_launch_cfg,
             instance_data::commands::build_instance_manifest,
@@ -231,7 +239,15 @@ pub fn run() {
             connection::commands::launch_instance_server,
             connection::commands::stop_instance_process,
             connection::commands::is_instance_process_running,
+            connection::commands::get_global_process_status,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app_handle, event| {
+            if matches!(event, RunEvent::Exit | RunEvent::ExitRequested { .. }) {
+                if let Some(manager) = app_handle.try_state::<Arc<ProcessManager>>() {
+                    manager.restore_global_openmw_session_if_any();
+                }
+            }
+        });
 }

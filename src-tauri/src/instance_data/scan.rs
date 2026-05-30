@@ -2,13 +2,30 @@ use std::path::Path;
 
 use uuid::Uuid;
 
-use super::checksum::directory_tree_checksum;
 use super::paths::{INSTANCE_DATA_DIR, NEREVAR_DIR};
 use crate::instance_setup::INSTANCE_TES3MP_DIR;
+use crate::openmw_ini_importer::is_openmw_content_path;
 use super::types::{PackageKind, ScannedPackage};
 
 const DATA_DIR_NAMES: &[&str] = &[
     "meshes", "textures", "icons", "music", "sound", "bookart", "fonts", "video",
+];
+
+/// Subdirectories that never contain OpenMW `content=` files. Skipping them keeps
+/// plugin discovery fast on large mods (Tamriel Rebuilt, BCOM, etc.).
+const PLUGIN_SEARCH_SKIP_DIRS: &[&str] = &[
+    "meshes",
+    "textures",
+    "icons",
+    "music",
+    "sound",
+    "bookart",
+    "fonts",
+    "video",
+    "distantland",
+    "shaders",
+    "screenshots",
+    "fanim",
 ];
 
 /// Scan immediate child folders of the instance data directory (e.g. `Better Bodies/`, `Rock Replacer/`).
@@ -37,14 +54,13 @@ pub fn scan_data_directory(data_dir: &Path) -> Result<Vec<ScannedPackage>, Strin
 
         let plugins = find_plugins(&path);
         let kind = classify_package(&path, &plugins);
-        let tree_checksum = directory_tree_checksum(&path)?;
 
         packages.push(ScannedPackage {
             name: folder_name.clone(),
             kind,
             relative_dir: folder_name,
             plugins,
-            tree_checksum,
+            tree_checksum: None,
         });
     }
 
@@ -52,7 +68,7 @@ pub fn scan_data_directory(data_dir: &Path) -> Result<Vec<ScannedPackage>, Strin
     Ok(packages)
 }
 
-fn should_skip_package_dir(name: &str) -> bool {
+pub fn should_skip_package_dir(name: &str) -> bool {
     if name.starts_with('.') {
         return true;
     }
@@ -82,21 +98,34 @@ fn collect_plugins(dir: &Path, out: &mut Vec<String>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if should_skip_plugin_search_dir(name) {
+                continue;
+            }
             collect_plugins(&path, out);
             continue;
         }
         if !path.is_file() {
             continue;
         }
-        let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+        if !is_openmw_content_path(&path) {
             continue;
-        };
-        if ext.eq_ignore_ascii_case("esp") || ext.eq_ignore_ascii_case("esm") {
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                out.push(name.to_string());
-            }
+        }
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            out.push(name.to_string());
         }
     }
+}
+
+fn should_skip_plugin_search_dir(name: &str) -> bool {
+    if name.starts_with('.') {
+        return true;
+    }
+    PLUGIN_SEARCH_SKIP_DIRS
+        .iter()
+        .any(|candidate| name.eq_ignore_ascii_case(candidate))
 }
 
 fn classify_package(dir: &Path, plugins: &[String]) -> PackageKind {
@@ -168,12 +197,60 @@ mod tests {
         assert_eq!(bb.relative_dir, "Better Bodies");
         assert!(matches!(bb.kind, PackageKind::Mod));
         assert!(bb.plugins.iter().any(|p| p.eq_ignore_ascii_case("betterbodies.esp")));
+        assert!(bb.tree_checksum.is_none());
 
         let rr = packages
             .iter()
             .find(|p| p.name == "Rock Replacer")
             .expect("Rock Replacer");
         assert!(matches!(rr.kind, PackageKind::Replacer));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn scan_finds_nested_openmw_content_files() {
+        let dir = std::env::temp_dir().join(format!("nerevar-scan-ext-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        ensure_instance_data_layout(&dir).unwrap();
+
+        let lua_mod = dir.join("Lua Pack");
+        std::fs::create_dir_all(lua_mod.join("scripts")).unwrap();
+        std::fs::write(lua_mod.join("scripts/pack.omwscripts"), b"GLOBAL: scripts/x.lua").unwrap();
+
+        let rebuilt = dir.join("Tamriel Rebuilt");
+        std::fs::create_dir_all(rebuilt.join("meshes")).unwrap();
+        std::fs::write(rebuilt.join("TR_Mainland.esm"), b"TES3").unwrap();
+        std::fs::write(rebuilt.join("TR_Mainland.bsa"), b"BSA").unwrap();
+
+        let packages = scan_data_directory(&dir).unwrap();
+        let lua = packages.iter().find(|p| p.name == "Lua Pack").expect("Lua Pack");
+        assert!(lua
+            .plugins
+            .iter()
+            .any(|p| p.eq_ignore_ascii_case("pack.omwscripts")));
+
+        let tr = packages
+            .iter()
+            .find(|p| p.name == "Tamriel Rebuilt")
+            .expect("Tamriel Rebuilt");
+        assert!(tr.plugins.iter().any(|p| p.eq_ignore_ascii_case("TR_Mainland.esm")));
+        assert!(tr.plugins.iter().any(|p| p.eq_ignore_ascii_case("TR_Mainland.bsa")));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn plugin_search_skips_asset_directories() {
+        let dir = std::env::temp_dir().join(format!("nerevar-scan-skip-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("meshes/deep")).unwrap();
+        std::fs::write(dir.join("meshes/deep/hidden.esp"), b"").unwrap();
+        std::fs::write(dir.join("visible.esp"), b"").unwrap();
+
+        let plugins = find_plugins(&dir);
+        assert!(plugins.iter().any(|p| p.eq_ignore_ascii_case("visible.esp")));
+        assert!(!plugins.iter().any(|p| p.eq_ignore_ascii_case("hidden.esp")));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

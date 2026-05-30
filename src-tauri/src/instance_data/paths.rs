@@ -8,7 +8,7 @@ pub const INSTANCE_DATA_DIR: &str = "data";
 pub const LOAD_ORDER_FILE: &str = "load-order.json";
 pub const MANIFEST_FILE: &str = "manifest.json";
 pub const LAUNCH_CFG_DIR: &str = "launch";
-pub const LAUNCH_CFG_FILE: &str = "openmw.cfg";
+pub const LAUNCH_CFG_FILE: &str = "openmw.launch.cfg";
 
 pub fn nerevar_dir(data_dir: &Path) -> PathBuf {
     data_dir.join(NEREVAR_DIR)

@@ -4,6 +4,12 @@ import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+const TERMINAL_SYNC_PHASES = new Set<SyncProgressEvent["phase"]>([
+  "complete",
+  "cancelled",
+  "failed",
+]);
+
 export function useInstanceSync(instanceId: string) {
   const [progress, setProgress] = useState<SyncProgressEvent | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -14,13 +20,7 @@ export function useInstanceSync(instanceId: string) {
     const unlisten = listen<SyncProgressEvent>("sync-progress", (event) => {
       if (event.payload.instanceId !== instanceId) return;
       setProgress(event.payload);
-      if (
-        event.payload.phase === "complete" ||
-        event.payload.phase === "cancelled" ||
-        event.payload.phase === "failed"
-      ) {
-        setSyncing(false);
-      }
+      setSyncing(!TERMINAL_SYNC_PHASES.has(event.payload.phase));
     });
     return () => {
       void unlisten.then((fn) => fn());
@@ -54,9 +54,8 @@ export function useInstanceSync(instanceId: string) {
       if (!message.toLowerCase().includes("cancelled")) {
         toast.error(`Sync failed: ${error}`);
       }
-      throw error;
-    } finally {
       setSyncing(false);
+      throw error;
     }
   }, [instanceId]);
 

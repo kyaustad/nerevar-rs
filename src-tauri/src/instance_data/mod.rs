@@ -5,30 +5,38 @@ mod load_order;
 mod lookup;
 mod manifest;
 mod manifest_compare;
+mod mo2_modlist;
 mod openmw_cfg;
 mod paths;
+mod prune;
+mod remove;
 mod resolver;
 mod scan;
 mod types;
 
 pub use load_order::{load_load_order, save_load_order, scan_and_merge_load_order};
 pub use lookup::find_instance_by_id;
+pub use mo2_modlist::{import_mo2_modlist_from_csv, Mo2ModlistImportReport, Mo2ModlistImportResult};
 pub use manifest::{
     build_manifest, load_manifest, validate_manifest_against_disk,
 };
 pub use manifest_compare::manifests_differ;
 pub use openmw_cfg::{
-    resolve_instance_openmw_config, write_ephemeral_openmw_cfg, write_tes3mp_launch_openmw_cfg,
+    resolve_instance_openmw_config, write_ephemeral_openmw_cfg, write_instance_launch_cfg,
 };
 pub use paths::{
-    ensure_instance_data_layout, manifest_path, package_abs_path, resolve_package_data_dir,
+    ensure_instance_data_layout, launch_cfg_path, manifest_path, package_abs_path,
+    resolve_package_data_dir,
 };
+pub use prune::prune_local_against_manifest;
+pub use remove::delete_package;
 pub use resolver::{resolve_load_order, resolve_synced_load_order};
 pub use types::*;
 
 #[cfg(test)]
 mod bindings {
     use super::types::{LoadOrder, NerevarManifest, RequiredDataFileEntry, ScannedPackage};
+    use crate::instance_data::{Mo2ModlistImportReport, Mo2ModlistImportResult};
     use crate::data::{InstanceConfig, NewConnectionConfig};
     use crate::process_manager::types::ProcessRole;
     use crate::sync_client::types::{
@@ -43,6 +51,8 @@ mod bindings {
     fn export_bindings() {
         let cfg = Config::default();
         NerevarManifest::export_all(&cfg).expect("export manifest graph");
+        Mo2ModlistImportReport::export_all(&cfg).expect("export Mo2ModlistImportReport");
+        Mo2ModlistImportResult::export_all(&cfg).expect("export Mo2ModlistImportResult");
         LoadOrder::export_all(&cfg).expect("export load-order graph");
         ScannedPackage::export(&cfg).expect("export ScannedPackage");
         InstanceConfig::export_all(&cfg).expect("export InstanceConfig");

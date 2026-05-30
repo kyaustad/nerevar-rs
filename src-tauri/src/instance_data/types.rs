@@ -44,6 +44,8 @@ pub struct LoadOrder {
     pub version: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_game_data: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_order: Option<Vec<String>>,
     pub entries: Vec<LoadOrderEntry>,
 }
 
@@ -52,6 +54,7 @@ impl Default for LoadOrder {
         Self {
             version: LOAD_ORDER_VERSION,
             base_game_data: None,
+            content_order: None,
             entries: Vec::new(),
         }
     }
@@ -155,5 +158,6 @@ pub struct ScannedPackage {
     pub kind: PackageKind,
     pub relative_dir: String,
     pub plugins: Vec<String>,
-    pub tree_checksum: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tree_checksum: Option<String>,
 }

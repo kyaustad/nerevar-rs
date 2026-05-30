@@ -8,11 +8,9 @@ use tauri::{AppHandle, Emitter};
 use crate::data::InstanceConfig;
 use crate::instance_data::{
     load_load_order, load_manifest, manifest_path, manifests_differ, resolve_package_data_dir,
-    resolve_synced_load_order, validate_manifest_against_disk, write_ephemeral_openmw_cfg,
-    write_tes3mp_launch_openmw_cfg, ManifestValidationResult, NerevarManifest,
-    ResolvedOpenMwConfig,
+    resolve_synced_load_order, validate_manifest_against_disk, write_instance_launch_cfg,
+    ManifestValidationResult, NerevarManifest, ResolvedOpenMwConfig,
 };
-use crate::instance_setup::instance_tes3mp_dir;
 
 use super::apply::apply_manifest_to_load_order;
 use super::coordinator::SyncCoordinator;
@@ -169,6 +167,18 @@ async fn sync_if_needed_inner(
         return Err("Sync cancelled".to_string());
     }
 
+    emit(
+        SyncPhase::ApplyingLoadOrder,
+        "Removing deleted mods and files",
+        0,
+        1,
+    );
+    crate::instance_data::prune_local_against_manifest(data_dir, &remote)?;
+
+    if cancel.load(Ordering::Relaxed) {
+        return Err("Sync cancelled".to_string());
+    }
+
     emit(SyncPhase::Validating, "Verifying downloaded files", 0, 1);
     let validation = validate_manifest_against_disk(data_dir, &remote);
     if !validation.valid {
@@ -191,9 +201,7 @@ fn finalize_after_sync(
     let load_order = load_load_order(data_dir)?;
     let resolved: ResolvedOpenMwConfig =
         resolve_synced_load_order(data_dir, &load_order, manifest)?;
-    write_ephemeral_openmw_cfg(data_dir, &resolved)?;
-    let tes3mp_dir = instance_tes3mp_dir(std::path::Path::new(&instance.path));
-    write_tes3mp_launch_openmw_cfg(&tes3mp_dir, data_dir, &resolved)?;
+    write_instance_launch_cfg(data_dir, &resolved)?;
     write_synced_client_connection(instance, manifest)?;
     Ok(())
 }

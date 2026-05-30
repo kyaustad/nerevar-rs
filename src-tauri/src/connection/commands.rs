@@ -14,7 +14,10 @@ use crate::instance_data::{
 use crate::instance_setup::{create_instance_data_dir, instance_tes3mp_dir};
 use crate::instance_data::ensure_instance_data_layout;
 use crate::github_getters;
-use crate::process_manager::{launch_tes3mp_client, launch_tes3mp_server, stop_tes3mp_process, ProcessManager, ProcessRole};
+use crate::process_manager::{
+    launch_tes3mp_client, launch_tes3mp_server, stop_tes3mp_process, GlobalProcessStatus,
+    ProcessManager, ProcessRole,
+};
 use crate::sync_client::{
     fetch_manifest_summary, ping_nerevar_server, run_instance_sync, sync_if_needed,
     touch_last_synced, write_synced_client_connection, RemoteManifestSummary, SyncCoordinator,
@@ -180,6 +183,10 @@ pub async fn launch_instance_client(
         }
     }
 
+    process_manager
+        .inner()
+        .ensure_can_launch(&instance_id, ProcessRole::Client)?;
+
     let data_dir = resolve_package_data_dir(&instance);
     launch_tes3mp_client(
         app,
@@ -203,6 +210,10 @@ pub fn launch_instance_server(
             .ok_or_else(|| format!("Instance not found: {instance_id}"))?
             .clone()
     };
+
+    process_manager
+        .inner()
+        .ensure_can_launch(&instance_id, ProcessRole::Server)?;
 
     let data_dir = resolve_package_data_dir(&instance);
     launch_tes3mp_server(
@@ -233,4 +244,11 @@ pub fn is_instance_process_running(
 ) -> Result<bool, String> {
     let role = ProcessRole::from_str(&role).ok_or_else(|| format!("Invalid process role: {role}"))?;
     process_manager.is_running(&instance_id, role)
+}
+
+#[tauri::command]
+pub fn get_global_process_status(
+    process_manager: State<'_, Arc<ProcessManager>>,
+) -> Result<GlobalProcessStatus, String> {
+    process_manager.global_status()
 }

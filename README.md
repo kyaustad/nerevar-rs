@@ -290,4 +290,4 @@ TES3MP, OpenMW, and Morrowind are separate projects with their own licenses and 
 
 ---
 
-_Nerevar is named for the figure at the center of Morrowind’s prophecy — the one who binds the tribe and the Empire. This project tries to do something smaller but in the same spirit: bring a scattered group onto the same path so you can walk it together._
+_Nerevar is named for the figure at the center of Morrowind’s prophecy — the one who unites the Chimer and whose reincarnation brings the Ashlander tribes together against Dagoth Ur. This project tries to do something smaller but in the same spirit: bring a scattered group onto the same path so you can walk it together._

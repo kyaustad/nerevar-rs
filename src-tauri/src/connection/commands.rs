@@ -12,7 +12,8 @@ use crate::instance_data::{
     load_manifest, resolve_package_data_dir, ManifestValidationResult,
 };
 use crate::instance_setup::{
-    create_instance_data_dir, instance_tes3mp_dir, write_tes3mp_client_connection,
+    create_instance_data_dir, instance_tes3mp_dir, write_owned_client_connection,
+    write_tes3mp_client_connection,
 };
 use crate::instance_data::ensure_instance_data_layout;
 use crate::github_getters;
@@ -197,6 +198,9 @@ pub async fn launch_instance_client(
             let config = update_synced_instance(&state, updated)?;
             let _ = app.emit("on_config_change", config);
         }
+    } else {
+        let tes3mp_dir = instance_tes3mp_dir(Path::new(&instance.path));
+        write_owned_client_connection(&tes3mp_dir)?;
     }
 
     process_manager

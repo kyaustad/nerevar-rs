@@ -44,6 +44,13 @@ pub fn apply_server_defaults(
     std::fs::write(&cfg_path, updated)
         .map_err(|e| format!("Failed to write {}: {e}", cfg_path.display()))?;
 
+    write_tes3mp_client_connection(
+        tes3mp_dir,
+        "127.0.0.1",
+        settings.server_port,
+        &settings.password,
+    )?;
+
     Ok(())
 }
 
@@ -398,6 +405,13 @@ fn patch_client_connection_cfg(
     }
 
     lines.join("\n")
+}
+
+/// Align `tes3mp-client-default.cfg` with this instance's local server settings.
+pub fn write_owned_client_connection(tes3mp_dir: &Path) -> Result<(), String> {
+    let server = read_tes3mp_server_settings(tes3mp_dir)?;
+    write_tes3mp_client_connection(tes3mp_dir, "127.0.0.1", server.port, &server.password)?;
+    Ok(())
 }
 
 #[cfg(test)]

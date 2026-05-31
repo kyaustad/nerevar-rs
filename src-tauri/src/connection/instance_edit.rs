@@ -8,7 +8,8 @@ use crate::data::{InstanceConnectionSettings, InstanceEditPayload};
 use crate::instance_data::find_instance_by_id;
 use crate::instance_setup::{
     instance_tes3mp_dir, read_tes3mp_client_settings, read_tes3mp_server_settings,
-    update_server_connection_settings, write_tes3mp_client_connection,
+    update_server_connection_settings, write_owned_client_connection,
+    write_tes3mp_client_connection,
 };
 use crate::AppState;
 
@@ -105,6 +106,7 @@ pub fn update_instance(
             edit.port,
             &edit.password,
         )?;
+        write_owned_client_connection(&tes3mp_dir)?;
         instance.tes3mp_server_port = Some(edit.port);
         let config = update_owned_instance(&state, instance)?;
         let _ = app.emit("on_config_change", config);

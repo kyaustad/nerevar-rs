@@ -1,3 +1,4 @@
+import { useConfig } from "@/features/config/context/config-context-provider";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,12 +48,14 @@ export function PortConflictProvider({
 }: {
   children: React.ReactNode;
 }) {
+  const config = useConfig();
+  const onboardingComplete = config?.onboardingComplete ?? false;
   const [conflicts, setConflicts] = useState<PortConflict[]>([]);
   const [open, setOpen] = useState(false);
   const [killingPid, setKillingPid] = useState<number | null>(null);
 
   const refreshConflicts = useCallback(async () => {
-    if (!isTauri()) {
+    if (!isTauri() || !onboardingComplete) {
       return;
     }
     try {
@@ -62,10 +65,12 @@ export function PortConflictProvider({
     } catch (error) {
       console.error(error);
     }
-  }, []);
+  }, [onboardingComplete]);
 
   useEffect(() => {
-    if (!isTauri()) {
+    if (!isTauri() || !onboardingComplete) {
+      setConflicts([]);
+      setOpen(false);
       return;
     }
 
@@ -83,7 +88,7 @@ export function PortConflictProvider({
     return () => {
       void unlisten.then((fn) => fn());
     };
-  }, [refreshConflicts]);
+  }, [refreshConflicts, onboardingComplete]);
 
   const activeConflict = conflicts[0] ?? null;
 

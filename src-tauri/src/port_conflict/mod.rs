@@ -119,10 +119,12 @@ pub fn conflict_for_port(
 pub fn check_startup_conflicts(config: &NerevarConfig) -> Result<Vec<PortConflict>, String> {
     let mut conflicts = Vec::new();
 
-    if let Some(conflict) =
-        conflict_for_port(config.sync_port as u16, PortRole::NerevarSync, None, None)?
-    {
-        conflicts.push(conflict);
+    if config.onboarding_complete {
+        if let Some(conflict) =
+            conflict_for_port(config.sync_port as u16, PortRole::NerevarSync, None, None)?
+        {
+            conflicts.push(conflict);
+        }
     }
 
     if let Some(owned) = &config.owned_instances {
@@ -218,6 +220,10 @@ pub fn retry_sync_server(state: State<'_, Mutex<AppState>>) -> Result<(), String
     let mut guard = state
         .lock()
         .map_err(|_| "App state lock poisoned".to_string())?;
+
+    if !guard.nerevar_config.onboarding_complete {
+        return Ok(());
+    }
 
     let port = guard.nerevar_config.sync_port;
     let next_retry = guard.server_retry_generation.wrapping_add(1);

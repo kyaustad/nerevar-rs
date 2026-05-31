@@ -34,6 +34,7 @@ struct AppState {
     nerevar_config: NerevarConfig,
     server_port_tx: Option<watch::Sender<i32>>,
     server_retry_tx: Option<watch::Sender<u64>>,
+    server_enabled_tx: Option<watch::Sender<bool>>,
     server_retry_generation: u64,
 }
 
@@ -167,8 +168,16 @@ pub fn run() {
                 .nerevar_config
                 .sync_port;
 
+            let onboarding_complete = app
+                .state::<Mutex<AppState>>()
+                .lock()
+                .unwrap()
+                .nerevar_config
+                .onboarding_complete;
+
             let (tx, mut rx) = watch::channel(initial_port);
             let (retry_tx, mut retry_rx) = watch::channel(0u64);
+            let (enabled_tx, mut enabled_rx) = watch::channel(onboarding_complete);
             app.state::<Mutex<AppState>>()
                 .lock()
                 .unwrap()
@@ -177,6 +186,10 @@ pub fn run() {
                 .lock()
                 .unwrap()
                 .server_retry_tx = Some(retry_tx);
+            app.state::<Mutex<AppState>>()
+                .lock()
+                .unwrap()
+                .server_enabled_tx = Some(enabled_tx);
 
             let sync_host = new_shared_sync_host();
             app.manage(sync_host.clone());
@@ -192,11 +205,15 @@ pub fn run() {
                 .nerevar_config
                 .clone();
 
-            tauri::async_runtime::spawn(async move {
-                if let Ok(conflicts) = port_conflict::check_startup_conflicts(&startup_config) {
-                    port_conflict::emit_port_conflicts(&app_handle, conflicts);
-                }
-            });
+            if startup_config.onboarding_complete {
+                tauri::async_runtime::spawn(async move {
+                    if let Ok(conflicts) =
+                        port_conflict::check_startup_conflicts(&startup_config)
+                    {
+                        port_conflict::emit_port_conflicts(&app_handle, conflicts);
+                    }
+                });
+            }
 
             let app_handle = app.handle().clone();
 
@@ -260,13 +277,50 @@ pub fn run() {
                 };
 
                 let mut port = *rx.borrow();
-                current_task = Some(start(port, server_ctx.clone(), app_handle.clone()));
+
+                if *enabled_rx.borrow() {
+                    tauri_plugin_log::log::info!(
+                        "NEREVAR SERVER: starting on port {port}"
+                    );
+                    current_task =
+                        Some(start(port, server_ctx.clone(), app_handle.clone()));
+                } else {
+                    tauri_plugin_log::log::info!(
+                        "NEREVAR SERVER: waiting for onboarding to complete"
+                    );
+                    current_task = None;
+                }
 
                 loop {
                     tokio::select! {
+                        changed = enabled_rx.changed() => {
+                            if changed.is_err() {
+                                break;
+                            }
+                            if !*enabled_rx.borrow() {
+                                if let Some(task) = current_task.take() {
+                                    task.abort();
+                                }
+                                current_task = None;
+                                continue;
+                            }
+
+                            port = *rx.borrow();
+                            tauri_plugin_log::log::info!(
+                                "NEREVAR SERVER: onboarding complete — starting on port {port}"
+                            );
+                            if let Some(task) = current_task.take() {
+                                task.abort();
+                            }
+                            current_task =
+                                Some(start(port, server_ctx.clone(), app_handle.clone()));
+                        }
                         changed = rx.changed() => {
                             if changed.is_err() {
                                 break;
+                            }
+                            if !*enabled_rx.borrow() {
+                                continue;
                             }
                             port = *rx.borrow();
                             tauri_plugin_log::log::info!(
@@ -281,6 +335,9 @@ pub fn run() {
                         changed = retry_rx.changed() => {
                             if changed.is_err() {
                                 break;
+                            }
+                            if !*enabled_rx.borrow() {
+                                continue;
                             }
                             tauri_plugin_log::log::info!(
                                 "NEREVAR SERVER: retrying bind on port {port}"

@@ -1,7 +1,6 @@
 import { NerevarHeader } from "@/components/custom/nerevar-header";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
   CardContent,
   CardDescription,
   CardHeader,
@@ -10,25 +9,25 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useConfig } from "@/features/config/context/config-context-provider";
+import { OnboardingGuideStep } from "@/features/onboarding/components/onboarding-guide-step";
+import {
+  OnboardingStepCard,
+  StepActions,
+} from "@/features/onboarding/components/onboarding-step-shell";
 import { cn } from "@/lib/utils";
 import { invoke } from "@tauri-apps/api/core";
 import {
   ArrowLeft,
-  ArrowRight,
   Check,
   FolderOpen,
-  Layers,
   Network,
   Sparkles,
-  Database,
-  Download,
-  ShieldCheck,
   Gamepad2,
   XIcon,
   CheckCircleIcon,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export type OnboardingStage =
@@ -119,7 +118,7 @@ export function OnboardingFlow({
               <SelectSyncPortStep onNext={goNext} onBack={goBack} />
             )}
             {stage === "tutorial" && (
-              <TutorialStep onNext={goNext} onBack={goBack} />
+              <OnboardingGuideStep onNext={goNext} onBack={goBack} />
             )}
             {stage === "complete" && (
               <CompleteStep onFinish={onFinish} onBack={goBack} />
@@ -182,66 +181,6 @@ function OnboardingProgress({ currentIndex }: { currentIndex: number }) {
         );
       })}
     </ol>
-  );
-}
-
-function OnboardingStepCard({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <Card
-      className={cn(
-        "gap-0 border-border/80 bg-card/75 py-0 shadow-[0_0_20px_hsl(var(--accent)/0.08)] ring-accent/15 backdrop-blur-sm",
-        className,
-      )}
-    >
-      {children}
-    </Card>
-  );
-}
-
-function StepActions({
-  onBack,
-  onPrimary,
-  primaryLabel,
-  showBack = true,
-  nextDisabled = false,
-}: {
-  onBack?: () => void;
-  onPrimary: () => void;
-  primaryLabel: string;
-  showBack?: boolean;
-  nextDisabled?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 border-t border-border/50 px-6 py-4">
-      {showBack && onBack ? (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onBack}
-          className="text-foreground/70"
-        >
-          <ArrowLeft data-icon="inline-start" />
-          Back
-        </Button>
-      ) : (
-        <span />
-      )}
-      <Button
-        variant="launch"
-        size="sm"
-        onClick={onPrimary}
-        disabled={nextDisabled}
-      >
-        {primaryLabel}
-        <ArrowRight data-icon="inline-end" />
-      </Button>
-    </div>
   );
 }
 
@@ -539,134 +478,6 @@ function SelectSyncPortStep({
             });
         }}
         primaryLabel="Continue"
-      />
-    </OnboardingStepCard>
-  );
-}
-
-const TUTORIAL_ITEMS = [
-  {
-    icon: Layers,
-    title: "Instances",
-    description:
-      "Each instance is a separate Morrowind multiplayer setup with its own mods and saves.",
-  },
-  {
-    icon: FolderOpen,
-    title: "Isolated data",
-    description:
-      "Instance files live under your data directory so builds never clash.",
-  },
-  {
-    icon: Database,
-    title: "Sync server",
-    description:
-      "Set an instance as the active instance and clients that connect to your server will use the sync port to sync the servers mods and data so everything stays identical.",
-  },
-  {
-    icon: Download,
-    title: "Incremental updates",
-    description:
-      "This allows you to update your instance and its data and mods incrementally so your players don't have to redownload or manage their data to ensure they can still connect and play.",
-  },
-  {
-    icon: ShieldCheck,
-    title: "Data validation",
-    description:
-      "When a user attempts to connect to your server, Nerevar will validate their data against your instance's manifest to ensure they have the correct files, versions, hashes and load order.",
-  },
-  {
-    icon: Sparkles,
-    title: "Launch from Nerevar",
-    description:
-      "Start client and server together from the dashboard when you're ready.",
-  },
-] as const;
-
-function TutorialStep({
-  onNext,
-  onBack,
-}: {
-  onNext: () => void;
-  onBack: () => void;
-}) {
-  const reduceMotion = useReducedMotion();
-  const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const scrollContainer = scrollRef.current;
-    if (!scrollContainer) return;
-
-    const markIfAtBottom = () => {
-      const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
-
-      // Content fits without scrolling — nothing else to read.
-      if (scrollHeight <= clientHeight + 1) {
-        setHasScrolledToBottom(true);
-        return;
-      }
-
-      setHasScrolledToBottom(scrollTop + clientHeight >= scrollHeight - 8);
-    };
-
-    markIfAtBottom();
-
-    scrollContainer.addEventListener("scroll", markIfAtBottom, {
-      passive: true,
-    });
-
-    const resizeObserver = new ResizeObserver(markIfAtBottom);
-    resizeObserver.observe(scrollContainer);
-
-    return () => {
-      scrollContainer.removeEventListener("scroll", markIfAtBottom);
-      resizeObserver.disconnect();
-    };
-  }, []);
-
-  return (
-    <OnboardingStepCard>
-      <CardHeader className="border-b border-border/50 px-6 pb-4 pt-6">
-        <CardTitle className="font-display text-base font-bold tracking-[0.2em] text-accent uppercase">
-          How instances work
-        </CardTitle>
-        <CardDescription className="font-serif text-base font-light tracking-[0.05em] leading-relaxed text-foreground/75">
-          A quick overview before you enter the manager.
-        </CardDescription>
-      </CardHeader>
-      <CardContent
-        ref={scrollRef}
-        className="flex max-h-[400px] flex-col gap-3 overflow-y-auto px-6 py-5"
-      >
-        {TUTORIAL_ITEMS.map((item, index) => (
-          <motion.div
-            key={item.title}
-            initial={reduceMotion ? false : { opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.07, duration: 0.3, ease: EASE }}
-            className="flex gap-3 rounded-lg border border-border/50 bg-background/30 px-4 py-3"
-          >
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-accent/30 text-accent/80">
-              <item.icon className="size-4" />
-            </div>
-            <div>
-              <p className="font-display text-sm tracking-[0.15em] text-accent uppercase">
-                {item.title}
-              </p>
-              <p className="mt-1 text-base font-light tracking-[0.05em] leading-relaxed text-foreground/70">
-                {item.description}
-              </p>
-            </div>
-          </motion.div>
-        ))}
-        <div className="h-px shrink-0" aria-hidden />
-      </CardContent>
-      <StepActions
-        onBack={onBack}
-        onPrimary={onNext}
-        primaryLabel="Almost done"
-        nextDisabled={!hasScrolledToBottom}
       />
     </OnboardingStepCard>
   );

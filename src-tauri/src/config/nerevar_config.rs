@@ -3,6 +3,7 @@ use std::sync::Mutex;
 // use std::time::Duration;
 
 use crate::data::{InstanceConfig, NerevarConfig, NewConnectionConfig, NewInstanceConfig};
+use crate::port_conflict;
 use crate::github_getters;
 use crate::instance_data::ensure_instance_data_layout;
 use crate::instance_setup::{apply_server_defaults, create_instance_data_dir, instance_tes3mp_dir};
@@ -60,8 +61,9 @@ pub fn load_or_create_nerevar_config(
 }
 
 pub async fn complete_onboarding(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
-    let (app_handle, config) = {
+    let (app_handle, config, start_sync_server) = {
         let mut state = state.lock().unwrap();
+        let was_complete = state.nerevar_config.onboarding_complete;
         state.nerevar_config.onboarding_complete = true;
         std::fs::write(
             Path::new(&state.nerevar_config_path),
@@ -70,20 +72,51 @@ pub async fn complete_onboarding(state: State<'_, Mutex<AppState>>) -> Result<()
         .map_err(|e| e.to_string())?;
         tauri_plugin_log::log::info!("Onboarding marked as complete in config and app state");
 
+        if !was_complete {
+            start_sync_server_supervisor(&mut state);
+        }
+
         (
             state
                 .app_handle
                 .clone()
                 .ok_or_else(|| "App handle not initialized".to_string())?,
             state.nerevar_config.clone(),
+            !was_complete,
         )
     };
 
     app_handle
-        .emit("on_config_change", config)
+        .emit("on_config_change", config.clone())
         .map_err(|e| e.to_string())?;
 
+    if start_sync_server {
+        let app = app_handle.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Ok(conflicts) = port_conflict::check_startup_conflicts(&config) {
+                port_conflict::emit_port_conflicts(&app, conflicts);
+            }
+        });
+    }
+
     Ok(())
+}
+
+fn start_sync_server_supervisor(state: &mut AppState) {
+    if let Some(tx) = state.server_enabled_tx.clone() {
+        let _ = tx.send(true);
+    }
+
+    let port = state.nerevar_config.sync_port;
+    if let Some(tx) = state.server_port_tx.clone() {
+        let _ = tx.send(port);
+    }
+
+    let next_retry = state.server_retry_generation.wrapping_add(1);
+    state.server_retry_generation = next_retry;
+    if let Some(tx) = state.server_retry_tx.clone() {
+        let _ = tx.send(next_retry);
+    }
 }
 
 // pub fn spawn_config_file_watcher(app: AppHandle) {
@@ -152,7 +185,7 @@ pub async fn set_sync_port(state: State<'_, Mutex<AppState>>, port: i32) -> Resu
         return Err(format!("Sync port must be between 1 and 65535, got {port}"));
     }
 
-    let (config_path, config_snapshot, tx, app_handle) = {
+    let (config_path, config_snapshot, tx, app_handle, restart_server) = {
         let mut guard = state
             .lock()
             .map_err(|_| "App state lock poisoned".to_string())?;
@@ -162,6 +195,7 @@ pub async fn set_sync_port(state: State<'_, Mutex<AppState>>, port: i32) -> Resu
             guard.nerevar_config.clone(),
             guard.server_port_tx.clone(),
             guard.app_handle.clone(),
+            guard.nerevar_config.onboarding_complete,
         )
     };
 
@@ -171,8 +205,10 @@ pub async fn set_sync_port(state: State<'_, Mutex<AppState>>, port: i32) -> Resu
     )
     .map_err(|e| e.to_string())?;
 
-    if let Some(tx) = tx {
-        let _ = tx.send(port);
+    if restart_server {
+        if let Some(tx) = tx {
+            let _ = tx.send(port);
+        }
     }
 
     if let Some(app) = app_handle {

@@ -4,6 +4,7 @@ use crate::data::NewInstanceConfig;
 use tauri_plugin_log::log::info;
 
 const SERVER_DEFAULTS_CFG: &str = "tes3mp-server-default.cfg";
+const CLIENT_DEFAULTS_CFG: &str = "tes3mp-client-default.cfg";
 pub const INSTANCE_TES3MP_DIR: &str = "tes3mp";
 
 pub fn instance_tes3mp_dir(instance_root: &Path) -> PathBuf {
@@ -42,6 +43,13 @@ pub fn apply_server_defaults(
 
     std::fs::write(&cfg_path, updated)
         .map_err(|e| format!("Failed to write {}: {e}", cfg_path.display()))?;
+
+    write_tes3mp_client_connection(
+        tes3mp_dir,
+        "127.0.0.1",
+        settings.server_port,
+        &settings.password,
+    )?;
 
     Ok(())
 }
@@ -152,6 +160,258 @@ fn patch_server_defaults_cfg(contents: &str, settings: &NewInstanceConfig) -> St
     }
 
     lines.join("\n")
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Tes3mpServerSettings {
+    pub hostname: String,
+    pub port: u16,
+    pub password: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Tes3mpClientSettings {
+    pub destination_address: String,
+    pub port: u16,
+    pub password: String,
+}
+
+pub fn read_tes3mp_server_settings(tes3mp_dir: &Path) -> Result<Tes3mpServerSettings, String> {
+    let cfg_path = find_server_defaults_cfg(tes3mp_dir)?;
+    let contents = std::fs::read_to_string(&cfg_path)
+        .map_err(|e| format!("Failed to read {}: {e}", cfg_path.display()))?;
+    parse_server_general_settings(&contents)
+}
+
+fn parse_server_general_settings(contents: &str) -> Result<Tes3mpServerSettings, String> {
+    let mut section = CfgSection::None;
+    let mut hostname = String::new();
+    let mut port: Option<u16> = None;
+    let mut password = String::new();
+
+    for line in contents.lines() {
+        if let Some(next) = parse_cfg_section(line) {
+            section = next;
+            continue;
+        }
+        let Some(key) = setting_key(line) else {
+            continue;
+        };
+        if section != CfgSection::General {
+            continue;
+        }
+        let value = line
+            .split('#')
+            .next()
+            .and_then(|l| l.split_once('='))
+            .map(|(_, v)| v.trim())
+            .unwrap_or("");
+
+        match key {
+            "hostname" => hostname = value.to_string(),
+            "port" => {
+                port = Some(
+                    value
+                        .parse()
+                        .map_err(|_| format!("Invalid TES3MP server port: {value}"))?,
+                );
+            }
+            "password" => password = value.to_string(),
+            _ => {}
+        }
+    }
+
+    Ok(Tes3mpServerSettings {
+        hostname,
+        port: port.ok_or_else(|| {
+            "Could not find General/port in tes3mp-server-default.cfg".to_string()
+        })?,
+        password,
+    })
+}
+
+pub fn read_tes3mp_client_settings(tes3mp_dir: &Path) -> Result<Tes3mpClientSettings, String> {
+    let cfg_path = find_client_defaults_cfg(tes3mp_dir)?;
+    let contents = std::fs::read_to_string(&cfg_path)
+        .map_err(|e| format!("Failed to read {}: {e}", cfg_path.display()))?;
+    parse_client_general_settings(&contents)
+}
+
+fn parse_client_general_settings(contents: &str) -> Result<Tes3mpClientSettings, String> {
+    let mut section = CfgSection::None;
+    let mut destination_address = String::new();
+    let mut port: Option<u16> = None;
+    let mut password = String::new();
+
+    for line in contents.lines() {
+        if let Some(next) = parse_cfg_section(line) {
+            section = next;
+            continue;
+        }
+        let Some(key) = setting_key(line) else {
+            continue;
+        };
+        if section != CfgSection::General {
+            continue;
+        }
+        let value = line
+            .split('#')
+            .next()
+            .and_then(|l| l.split_once('='))
+            .map(|(_, v)| v.trim())
+            .unwrap_or("");
+
+        match key {
+            "destinationAddress" => destination_address = value.to_string(),
+            "port" => {
+                port = Some(
+                    value
+                        .parse()
+                        .map_err(|_| format!("Invalid TES3MP client port: {value}"))?,
+                );
+            }
+            "password" => password = value.to_string(),
+            _ => {}
+        }
+    }
+
+    Ok(Tes3mpClientSettings {
+        destination_address,
+        port: port.ok_or_else(|| {
+            "Could not find General/port in tes3mp-client-default.cfg".to_string()
+        })?,
+        password,
+    })
+}
+
+pub fn update_server_connection_settings(
+    tes3mp_dir: &Path,
+    hostname: &str,
+    port: u16,
+    password: &str,
+) -> Result<(), String> {
+    let cfg_path = find_server_defaults_cfg(tes3mp_dir)?;
+    let contents = std::fs::read_to_string(&cfg_path)
+        .map_err(|e| format!("Failed to read {}: {e}", cfg_path.display()))?;
+    let updated = patch_server_connection_settings(&contents, hostname, port, password);
+    std::fs::write(&cfg_path, updated)
+        .map_err(|e| format!("Failed to write {}: {e}", cfg_path.display()))?;
+    Ok(())
+}
+
+fn patch_server_connection_settings(
+    contents: &str,
+    hostname: &str,
+    port: u16,
+    password: &str,
+) -> String {
+    let mut section = CfgSection::None;
+    let mut lines: Vec<String> = Vec::new();
+
+    for line in contents.lines() {
+        if let Some(next) = parse_cfg_section(line) {
+            section = next;
+            lines.push(line.to_string());
+            continue;
+        }
+
+        let Some(key) = setting_key(line) else {
+            lines.push(line.to_string());
+            continue;
+        };
+
+        let patched = if section == CfgSection::General {
+            match key {
+                "hostname" => Some(format!("hostname = {hostname}")),
+                "port" => Some(format!("port = {port}")),
+                "password" => Some(format!("password = {password}")),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        lines.push(patched.unwrap_or_else(|| line.to_string()));
+    }
+
+    lines.join("\n")
+}
+
+pub fn write_tes3mp_client_connection(
+    tes3mp_dir: &Path,
+    destination_address: &str,
+    port: u16,
+    password: &str,
+) -> Result<PathBuf, String> {
+    let cfg_path = find_client_defaults_cfg(tes3mp_dir)?;
+    let contents = std::fs::read_to_string(&cfg_path)
+        .map_err(|e| format!("Failed to read {}: {e}", cfg_path.display()))?;
+
+    let updated = patch_client_connection_cfg(&contents, destination_address, port, password);
+    std::fs::write(&cfg_path, updated)
+        .map_err(|e| format!("Failed to write {}: {e}", cfg_path.display()))?;
+    Ok(cfg_path)
+}
+
+fn find_client_defaults_cfg(tes3mp_dir: &Path) -> Result<PathBuf, String> {
+    let direct = tes3mp_dir.join(CLIENT_DEFAULTS_CFG);
+    if direct.is_file() {
+        return Ok(direct);
+    }
+
+    find_file_by_name(tes3mp_dir, CLIENT_DEFAULTS_CFG, 4).ok_or_else(|| {
+        format!(
+            "Could not find {CLIENT_DEFAULTS_CFG} under {}",
+            tes3mp_dir.display()
+        )
+    })
+}
+
+fn patch_client_connection_cfg(
+    contents: &str,
+    destination_address: &str,
+    port: u16,
+    password: &str,
+) -> String {
+    let mut section = CfgSection::None;
+    let mut lines: Vec<String> = Vec::new();
+
+    for line in contents.lines() {
+        if let Some(next) = parse_cfg_section(line) {
+            section = next;
+            lines.push(line.to_string());
+            continue;
+        }
+
+        let Some(key) = setting_key(line) else {
+            lines.push(line.to_string());
+            continue;
+        };
+
+        let patched = if section == CfgSection::General {
+            match key {
+                "destinationAddress" => {
+                    Some(format!("destinationAddress = {destination_address}"))
+                }
+                "port" => Some(format!("port = {port}")),
+                "password" => Some(format!("password = {password}")),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        lines.push(patched.unwrap_or_else(|| line.to_string()));
+    }
+
+    lines.join("\n")
+}
+
+/// Align `tes3mp-client-default.cfg` with this instance's local server settings.
+pub fn write_owned_client_connection(tes3mp_dir: &Path) -> Result<(), String> {
+    let server = read_tes3mp_server_settings(tes3mp_dir)?;
+    write_tes3mp_client_connection(tes3mp_dir, "127.0.0.1", server.port, &server.password)?;
+    Ok(())
 }
 
 #[cfg(test)]

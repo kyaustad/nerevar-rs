@@ -6,13 +6,17 @@ use std::path::Path;
 pub fn read_master_dependencies(path: &Path) -> io::Result<Vec<String>> {
     let mut file = File::open(path)?;
     let mut rec_name = [0u8; 4];
-    file.read_exact(&mut rec_name)?;
+    if file.read_exact(&mut rec_name).is_err() {
+        return Ok(Vec::new());
+    }
     if &rec_name != b"TES3" {
         return Ok(Vec::new());
     }
 
     let mut rec_size_buf = [0u8; 4];
-    file.read_exact(&mut rec_size_buf)?;
+    if file.read_exact(&mut rec_size_buf).is_err() {
+        return Ok(Vec::new());
+    }
     let rec_size = u32::from_le_bytes(rec_size_buf);
     let rec_end = file.stream_position()? + rec_size as u64;
 

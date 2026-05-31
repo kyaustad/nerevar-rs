@@ -30,7 +30,7 @@ export function NerevarHeader({
           onClick={() => navigate("/")}
         >
           <ArrowLeft className="size-4" />
-          Back
+          Home
         </Button>
       )}
       <div className="mb-4 flex size-14 items-center justify-center rounded-xl bg-gradient-to-br from-accent/80 to-accent/40 glow-gold">

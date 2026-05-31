@@ -12,6 +12,7 @@ import { Link } from "wouter";
 import {
   Calendar,
   ChevronRight,
+  Folder,
   Layers,
   Play,
   Plus,
@@ -20,6 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { InstanceConfig } from "@/types";
+import { useProcessStatus } from "@/features/instances/context/process-status-context";
 
 const dashboardGoldCardClass = cn(
   "dashboard-nav-card relative flex min-h-[220px] w-full cursor-pointer items-center justify-center overflow-hidden border-0 py-0 shadow-none ring-1 ring-accent/25",
@@ -60,117 +62,130 @@ function DashboardGoldCard({
   );
 }
 
-export function ConnectionCard({ instance }: { instance: InstanceConfig }) {
-  const href = `/instances/${encodeURIComponent(instance.id)}`;
+function InstanceCardMeta({ instance }: { instance: InstanceConfig }) {
+  const syncedLabel = instance.lastSyncedAt
+    ? new Date(instance.lastSyncedAt).toLocaleString()
+    : `${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`;
 
   return (
-    <Link href={href}>
-      <Card className="gap-0 border-border/80 bg-card/70 py-0 shadow-[0_0_15px_hsl(var(--accent)/0.08)] ring-accent/20 hover:ring-accent/40 hover:shadow-[0_0_24px_hsl(var(--accent)/0.12)] h-full flex flex-col justify-between">
-        <CardHeader className="border-b border-border/50 pb-3 pt-4">
-          <CardTitle className="font-display text-sm tracking-[0.15em] text-accent uppercase">
-            {instance.name}
-          </CardTitle>
-
-          <CardAction>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-accent/60 hover:text-accent"
-            >
-              <ChevronRight />
-            </Button>
-          </CardAction>
-
-          <CardDescription className="font-serif text-[0.95rem] leading-relaxed text-foreground/75 line-clamp-2 ">
-            {instance.description}
-          </CardDescription>
-        </CardHeader>
-
-        <CardContent className="flex flex-col gap-4 pb-4 pt-3">
-          <div className="flex flex-wrap gap-4 text-xs tracking-wide text-foreground/65">
-            <span className="inline-flex items-center gap-1.5">
-              <Layers className="size-3.5 text-accent/70" />
-              {`##`} mods
-            </span>
-
-            <span className="inline-flex items-center gap-1.5">
-              <Calendar className="size-3.5 text-accent/70" />
-
-              {`${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="launch" size="sm" className="h-9 flex-1 text-xs">
-              <Play data-icon="inline-start" />
-              Launch Client
-            </Button>
-
-            <Button variant="server" size="sm" className="h-9 flex-1 text-xs">
-              <Server data-icon="inline-start" />
-              Launch Server
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
+    <div className="flex flex-wrap gap-4 text-sm tracking-wide text-foreground/65">
+      <span className="inline-flex items-center gap-1.5">
+        <Layers className="size-3.5 text-accent/70" />
+        {instance.remoteHost ? "Synced" : "Local"}
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <Calendar className="size-3.5 text-accent/70" />
+        {syncedLabel}
+      </span>
+    </div>
   );
 }
-export function InstanceCard({ instance }: { instance: InstanceConfig }) {
+
+function InstanceLaunchButtons({
+  instanceId,
+  clientOnly = false,
+}: {
+  instanceId: string;
+  clientOnly?: boolean;
+}) {
+  const { launch, canLaunch, client, server } = useProcessStatus();
+  const clientDisabled = !canLaunch(instanceId, "client");
+  const serverDisabled = !canLaunch(instanceId, "server");
+  const clientBusyElsewhere =
+    client.instanceId !== null &&
+    client.instanceId !== instanceId &&
+    (client.running || client.launching);
+  const serverBusyElsewhere =
+    server.instanceId !== null &&
+    server.instanceId !== instanceId &&
+    (server.running || server.launching);
+
+  if (clientOnly) {
+    return (
+      <Button
+        variant="launch"
+        className="h-10 w-full text-sm"
+        disabled={clientDisabled || clientBusyElsewhere}
+        onClick={() => void launch(instanceId, "client", true)}
+      >
+        <Play data-icon="inline-start" />
+        Launch Client
+      </Button>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <Button
+        variant="launch"
+        className="h-10 flex-1 text-xs"
+        disabled={clientDisabled || clientBusyElsewhere}
+        onClick={() => void launch(instanceId, "client")}
+      >
+        <Play data-icon="inline-start" />
+        Launch Client
+      </Button>
+      <Button
+        variant="server"
+        className="h-10 flex-1 text-xs"
+        disabled={serverDisabled || serverBusyElsewhere}
+        onClick={() => void launch(instanceId, "server")}
+      >
+        <Server data-icon="inline-start" />
+        Launch Server
+      </Button>
+    </div>
+  );
+}
+
+function InstanceOverviewCard({
+  instance,
+  clientOnly = false,
+}: {
+  instance: InstanceConfig;
+  clientOnly?: boolean;
+}) {
   const href = `/instances/${encodeURIComponent(instance.id)}`;
 
   return (
-    <Link href={href}>
-      <Card className="gap-0 border-border/80 bg-card/70 py-0 shadow-[0_0_15px_hsl(var(--accent)/0.08)] ring-accent/20 hover:ring-accent/40 hover:shadow-[0_0_24px_hsl(var(--accent)/0.12)] h-full flex flex-col justify-between">
+    <Card className="gap-0 border-border/80 bg-card/70 py-0 shadow-[0_0_15px_hsl(var(--accent)/0.08)] ring-accent/20 hover:ring-accent/40 hover:shadow-[0_0_24px_hsl(var(--accent)/0.12)] h-full flex flex-col justify-between">
+      <Link href={href} className="block">
         <CardHeader className="border-b border-border/50 pb-3 pt-4">
-          <CardTitle className="font-display text-sm tracking-[0.15em] text-accent uppercase">
+          <CardTitle className="font-display text-base tracking-[0.15em] text-accent uppercase">
             {instance.name}
           </CardTitle>
-
           <CardAction>
             <Button
-              variant="ghost"
+              variant="outline"
               size="icon-sm"
               className="text-accent/60 hover:text-accent"
+              tabIndex={-1}
             >
               <ChevronRight />
             </Button>
           </CardAction>
-
-          <CardDescription className="font-serif text-[0.95rem] leading-relaxed text-foreground/75 line-clamp-2 ">
+          <CardDescription className="font-serif text-base leading-relaxed text-foreground/75 line-clamp-2 ">
             {instance.description}
           </CardDescription>
         </CardHeader>
-
-        <CardContent className="flex flex-col gap-4 pb-4 pt-3">
-          <div className="flex flex-wrap gap-4 text-xs tracking-wide text-foreground/65">
-            <span className="inline-flex items-center gap-1.5">
-              <Layers className="size-3.5 text-accent/70" />
-              {`##`} mods
-            </span>
-
-            <span className="inline-flex items-center gap-1.5">
-              <Calendar className="size-3.5 text-accent/70" />
-
-              {`${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="launch" size="sm" className="h-9 flex-1 text-xs">
-              <Play data-icon="inline-start" />
-              Launch Client
-            </Button>
-
-            <Button variant="server" size="sm" className="h-9 flex-1 text-xs">
-              <Server data-icon="inline-start" />
-              Launch Server
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
+      </Link>
+      <CardContent className="flex flex-col gap-4 pb-4 pt-3">
+        <InstanceCardMeta instance={instance} />
+        <InstanceLaunchButtons
+          instanceId={instance.id}
+          clientOnly={clientOnly}
+        />
+      </CardContent>
+    </Card>
   );
+}
+
+export function ConnectionCard({ instance }: { instance: InstanceConfig }) {
+  return <InstanceOverviewCard instance={instance} clientOnly />;
+}
+
+export function InstanceCard({ instance }: { instance: InstanceConfig }) {
+  return <InstanceOverviewCard instance={instance} />;
 }
 
 export function NewConnectionCard({ className }: { className?: string }) {
@@ -243,6 +258,16 @@ export function DashboardSettingsCard({ className }: { className?: string }) {
       href="/settings"
       icon={Settings}
       label="Nerevar Settings"
+      className={className}
+    />
+  );
+}
+export function DashboardMO2Card({ className }: { className?: string }) {
+  return (
+    <DashboardGoldCard
+      href="/mo2"
+      icon={Folder}
+      label="MO2 Plugin"
       className={className}
     />
   );

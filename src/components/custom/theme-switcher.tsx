@@ -34,7 +34,7 @@ export function ThemeSwitcher({ className }: { className?: string }) {
       <TooltipTrigger asChild>
         <Button
           type="button"
-          variant="ghost"
+          variant="outline"
           size="icon"
           className={cn(
             "text-accent hover:bg-accent/10 hover:text-accent",

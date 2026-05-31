@@ -1,13 +1,15 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use encoding_rs::Encoding;
 
+use super::content_files::{self, is_record_plugin};
 use super::esm_header;
 use super::fallback_keys::FALLBACK_INI_KEYS;
+use super::plugin_index::PluginIndex;
 
 pub type MultiStrMap = BTreeMap<String, Vec<String>>;
 
@@ -68,6 +70,48 @@ pub fn import_morrowind_ini(
     }
 
     let ini = load_ini_file(morrowind_ini, options.encoding)?;
+    apply_morrowind_ini_import(&ini, openmw_cfg, seed, options, morrowind_ini)
+}
+
+/// Build a synthetic `Morrowind.ini` map when the game was installed but never launched.
+pub fn build_default_morrowind_ini(data_files: &Path) -> MultiStrMap {
+    const DEFAULT_PLUGINS: &[&str] = &["Morrowind.esm", "Tribunal.esm", "Bloodmoon.esm"];
+    const DEFAULT_ARCHIVES: &[&str] = &["Morrowind.bsa", "Tribunal.bsa", "Bloodmoon.bsa"];
+
+    let mut ini = MultiStrMap::new();
+
+    for (index, plugin) in DEFAULT_PLUGINS
+        .iter()
+        .filter(|plugin| data_files.join(plugin).is_file())
+        .enumerate()
+    {
+        ini.insert(
+            format!("Game Files:GameFile{index}"),
+            vec![(*plugin).to_string()],
+        );
+    }
+
+    for (index, archive) in DEFAULT_ARCHIVES
+        .iter()
+        .filter(|archive| data_files.join(archive).is_file())
+        .enumerate()
+    {
+        ini.insert(
+            format!("Archives:Archive {index}"),
+            vec![(*archive).to_string()],
+        );
+    }
+
+    ini
+}
+
+pub fn apply_morrowind_ini_import(
+    ini: &MultiStrMap,
+    openmw_cfg: &Path,
+    seed: MultiStrMap,
+    options: ImportOptions,
+    data_files: &Path,
+) -> Result<(), String> {
     let mut cfg = if openmw_cfg.exists() {
         load_cfg_file(openmw_cfg)?
     } else {
@@ -80,15 +124,15 @@ pub fn import_morrowind_ini(
         }
     }
 
-    merge(&mut cfg, &ini);
-    merge_fallback(&mut cfg, &ini);
+    merge(&mut cfg, ini);
+    merge_fallback(&mut cfg, ini);
 
     if options.import_game_files {
-        import_game_files(&mut cfg, &ini, morrowind_ini, options.encoding)?;
+        import_game_files(&mut cfg, ini, data_files, options.encoding)?;
     }
 
     if options.import_archives {
-        import_archives(&mut cfg, &ini);
+        import_archives(&mut cfg, ini);
     }
 
     if let Some(parent) = openmw_cfg.parent() {
@@ -150,13 +194,10 @@ pub fn load_ini_file(path: &Path, encoding: IniEncoding) -> Result<MultiStrMap, 
     Ok(map)
 }
 
-pub fn load_cfg_file(path: &Path) -> Result<MultiStrMap, String> {
-    let file = fs::File::open(path).map_err(|e| e.to_string())?;
-    let reader = BufReader::new(file);
+pub fn parse_cfg_contents(contents: &str) -> MultiStrMap {
     let mut map: MultiStrMap = BTreeMap::new();
 
-    for line in reader.lines() {
-        let line = line.map_err(|e| e.to_string())?;
+    for line in contents.lines() {
         let line = line.split('#').next().unwrap_or("").trim();
         if line.is_empty() {
             continue;
@@ -169,7 +210,18 @@ pub fn load_cfg_file(path: &Path) -> Result<MultiStrMap, String> {
             .push(value.trim().to_string());
     }
 
-    Ok(map)
+    map
+}
+
+pub fn load_cfg_file(path: &Path) -> Result<MultiStrMap, String> {
+    let contents = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    Ok(parse_cfg_contents(&contents))
+}
+
+pub fn cfg_to_string(cfg: &MultiStrMap) -> String {
+    let mut out = Vec::new();
+    write_to_file(&mut out, cfg).expect("writing OpenMW cfg to memory should not fail");
+    String::from_utf8(out).expect("OpenMW cfg should be valid UTF-8")
 }
 
 fn merge(cfg: &mut MultiStrMap, ini: &MultiStrMap) {
@@ -385,6 +437,72 @@ pub fn quote_data_path(path: &Path) -> String {
     }
 }
 
+/// Find a plugin file under one or more `data=` paths (searches subdirectories).
+pub fn find_plugin_in_data_paths(
+    data_paths: &[PathBuf],
+    plugin_name: &str,
+) -> Option<PathBuf> {
+    PluginIndex::build(data_paths)
+        .find(plugin_name)
+        .cloned()
+}
+
+/// Sort plugin filenames by file timestamp and master dependencies (OpenMW ini importer rules).
+/// Extended OpenMW content (`.omwscripts`, `.omwaddon`, `.bsa`) keeps the load-order sequence
+/// from `plugin_names` and is appended after dependency-sorted `.esm`/`.esp` entries.
+pub fn sort_content_plugins(
+    index: &PluginIndex,
+    plugin_names: &[String],
+) -> Result<Vec<String>, String> {
+    let mut record_files: Vec<(SystemTime, PathBuf)> = Vec::new();
+    for name in plugin_names {
+        if !is_record_plugin(name) {
+            continue;
+        }
+
+        if let Some(path) = index.find(name) {
+            if let Some(time) = last_write_time(path) {
+                record_files.push((time, path.clone()));
+            }
+        }
+    }
+
+    record_files.sort_by_key(|(time, _)| *time);
+
+    let mut unsorted: Vec<(String, Vec<String>)> = Vec::new();
+    for (_, path) in &record_files {
+        let masters = esm_header::read_master_dependencies(path).map_err(|e| e.to_string())?;
+        let filename = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+        unsorted.push((filename, masters));
+    }
+
+    let mut sorted = dependency_sort(unsorted);
+    fix_tribunal_bloodmoon_order(&mut sorted);
+
+    let mut seen: std::collections::HashSet<String> = sorted
+        .iter()
+        .map(|name| name.to_ascii_lowercase())
+        .collect();
+
+    for name in plugin_names {
+        if is_record_plugin(name) || !content_files::is_openmw_content_file(name) {
+            continue;
+        }
+        if index.find(name).is_none() {
+            continue;
+        }
+        if seen.insert(name.to_ascii_lowercase()) {
+            sorted.push(name.clone());
+        }
+    }
+
+    Ok(sorted)
+}
+
 /// Resolve `Morrowind.ini` from a Data Files directory (onboarding stores Data Files path).
 pub fn resolve_morrowind_ini(data_files_path: &Path) -> Option<PathBuf> {
     let in_data = data_files_path.join("Morrowind.ini");
@@ -420,6 +538,108 @@ mod tests {
             map.get("Game Files:GameFile0").map(|v| v[0].as_str()),
             Some("Morrowind.esm")
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sort_content_plugins_includes_extended_openmw_files() {
+        let dir = std::env::temp_dir().join(format!("nerevar-sort-ext-{}", std::process::id()));
+        let mod_dir = dir.join("Lua Pack");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&mod_dir).unwrap();
+        fs::write(mod_dir.join("Helper.esp"), b"").unwrap();
+        fs::write(mod_dir.join("pack.omwscripts"), b"GLOBAL: x.lua").unwrap();
+
+        let index = PluginIndex::build(&[mod_dir.clone()]);
+        let sorted = sort_content_plugins(
+            &index,
+            &[
+                "pack.omwscripts".into(),
+                "Helper.esp".into(),
+            ],
+        )
+        .unwrap();
+
+        assert!(
+            sorted.iter().any(|name| name.eq_ignore_ascii_case("Helper.esp")),
+            "expected Helper.esp, got {sorted:?}"
+        );
+        assert!(
+            sorted
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case("pack.omwscripts")),
+            "expected pack.omwscripts, got {sorted:?}"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn build_default_morrowind_ini_lists_existing_plugins_and_archives() {
+        let dir = std::env::temp_dir().join(format!("nerevar-default-ini-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("Morrowind.esm"), b"TES3").unwrap();
+        fs::write(dir.join("Tribunal.esm"), b"TES3").unwrap();
+        fs::write(dir.join("Morrowind.bsa"), b"BSA").unwrap();
+        fs::write(dir.join("Tribunal.bsa"), b"BSA").unwrap();
+
+        let ini = build_default_morrowind_ini(&dir);
+        assert_eq!(
+            ini.get("Game Files:GameFile0").map(|values| values[0].as_str()),
+            Some("Morrowind.esm")
+        );
+        assert_eq!(
+            ini.get("Game Files:GameFile1").map(|values| values[0].as_str()),
+            Some("Tribunal.esm")
+        );
+        assert_eq!(
+            ini.get("Archives:Archive 0").map(|values| values[0].as_str()),
+            Some("Morrowind.bsa")
+        );
+        assert_eq!(
+            ini.get("Archives:Archive 1").map(|values| values[0].as_str()),
+            Some("Tribunal.bsa")
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn apply_default_ini_writes_openmw_cfg_without_morrowind_ini_file() {
+        let dir = std::env::temp_dir().join(format!("nerevar-default-import-{}", std::process::id()));
+        let data_files = dir.join("Data Files");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&data_files).unwrap();
+        fs::write(data_files.join("Morrowind.esm"), b"TES3").unwrap();
+        fs::write(data_files.join("Morrowind.bsa"), b"BSA").unwrap();
+
+        let ini = build_default_morrowind_ini(&data_files);
+        let cfg_path = dir.join("openmw.nerevar.cfg");
+        let mut seed = MultiStrMap::new();
+        seed.insert("encoding".to_string(), vec!["win1252".to_string()]);
+        seed.insert(
+            "data".to_string(),
+            vec![quote_data_path(&data_files)],
+        );
+
+        apply_morrowind_ini_import(
+            &ini,
+            &cfg_path,
+            seed,
+            ImportOptions {
+                encoding: IniEncoding::Win1252,
+                import_game_files: false,
+                import_archives: true,
+            },
+            &data_files,
+        )
+        .unwrap();
+
+        let contents = fs::read_to_string(&cfg_path).unwrap();
+        assert!(contents.contains("data="));
+        assert!(contents.contains("fallback-archive=Morrowind.bsa"));
+
         let _ = fs::remove_dir_all(&dir);
     }
 

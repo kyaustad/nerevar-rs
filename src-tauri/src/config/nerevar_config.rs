@@ -2,8 +2,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 // use std::time::Duration;
 
-use crate::data::{InstanceConfig, NerevarConfig, NewInstanceConfig};
+use crate::data::{InstanceConfig, NerevarConfig, NewConnectionConfig, NewInstanceConfig};
+use crate::port_conflict;
 use crate::github_getters;
+use crate::instance_data::ensure_instance_data_layout;
 use crate::instance_setup::{apply_server_defaults, create_instance_data_dir, instance_tes3mp_dir};
 use crate::AppState;
 // use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
@@ -59,8 +61,9 @@ pub fn load_or_create_nerevar_config(
 }
 
 pub async fn complete_onboarding(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
-    let (app_handle, config) = {
+    let (app_handle, config, start_sync_server) = {
         let mut state = state.lock().unwrap();
+        let was_complete = state.nerevar_config.onboarding_complete;
         state.nerevar_config.onboarding_complete = true;
         std::fs::write(
             Path::new(&state.nerevar_config_path),
@@ -69,20 +72,51 @@ pub async fn complete_onboarding(state: State<'_, Mutex<AppState>>) -> Result<()
         .map_err(|e| e.to_string())?;
         tauri_plugin_log::log::info!("Onboarding marked as complete in config and app state");
 
+        if !was_complete {
+            start_sync_server_supervisor(&mut state);
+        }
+
         (
             state
                 .app_handle
                 .clone()
                 .ok_or_else(|| "App handle not initialized".to_string())?,
             state.nerevar_config.clone(),
+            !was_complete,
         )
     };
 
     app_handle
-        .emit("on_config_change", config)
+        .emit("on_config_change", config.clone())
         .map_err(|e| e.to_string())?;
 
+    if start_sync_server {
+        let app = app_handle.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Ok(conflicts) = port_conflict::check_startup_conflicts(&config) {
+                port_conflict::emit_port_conflicts(&app, conflicts);
+            }
+        });
+    }
+
     Ok(())
+}
+
+fn start_sync_server_supervisor(state: &mut AppState) {
+    if let Some(tx) = state.server_enabled_tx.clone() {
+        let _ = tx.send(true);
+    }
+
+    let port = state.nerevar_config.sync_port;
+    if let Some(tx) = state.server_port_tx.clone() {
+        let _ = tx.send(port);
+    }
+
+    let next_retry = state.server_retry_generation.wrapping_add(1);
+    state.server_retry_generation = next_retry;
+    if let Some(tx) = state.server_retry_tx.clone() {
+        let _ = tx.send(next_retry);
+    }
 }
 
 // pub fn spawn_config_file_watcher(app: AppHandle) {
@@ -147,27 +181,40 @@ pub async fn set_root_path(state: State<'_, Mutex<AppState>>, path: String) -> R
 }
 
 pub async fn set_sync_port(state: State<'_, Mutex<AppState>>, port: i32) -> Result<(), String> {
-    let (config_path, config_snapshot, tx) = {
-        let mut guard = state.lock().unwrap();
+    if !(1..=65535).contains(&port) {
+        return Err(format!("Sync port must be between 1 and 65535, got {port}"));
+    }
+
+    let (config_path, config_snapshot, tx, app_handle, restart_server) = {
+        let mut guard = state
+            .lock()
+            .map_err(|_| "App state lock poisoned".to_string())?;
         guard.nerevar_config.sync_port = port;
         (
             guard.nerevar_config_path.clone(),
             guard.nerevar_config.clone(),
             guard.server_port_tx.clone(),
+            guard.app_handle.clone(),
+            guard.nerevar_config.onboarding_complete,
         )
     };
 
-    // Persist config first.
     std::fs::write(
         Path::new(&config_path),
         serde_json::to_string_pretty(&config_snapshot).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
 
-    // Then signal server supervisor (backend-only).
-    if let Some(tx) = tx {
-        let _ = tx.send(port);
+    if restart_server {
+        if let Some(tx) = tx {
+            let _ = tx.send(port);
+        }
     }
+
+    if let Some(app) = app_handle {
+        let _ = app.emit("on_config_change", config_snapshot);
+    }
+
     Ok(())
 }
 
@@ -181,12 +228,33 @@ fn build_instance_config(new_instance: &NewInstanceConfig) -> InstanceConfig {
         name: new_instance.instance_name.clone(),
         description: new_instance.instance_description.clone(),
         path: new_instance.instance_root_path.clone(),
-        is_active: false,
         data_dir: new_instance.instance_data_dir.clone(),
+        release_id: Some(new_instance.release_id.clone()),
+        remote_host: None,
+        remote_sync_port: None,
+        last_synced_at: None,
+        tes3mp_server_port: None,
+        sync_password: None,
     }
 }
 
-fn persist_instance_to_config(
+pub fn build_synced_instance_config(new_connection: &NewConnectionConfig) -> InstanceConfig {
+    InstanceConfig {
+        id: new_instance_id(),
+        name: new_connection.connection_name.clone(),
+        description: new_connection.connection_description.clone(),
+        path: new_connection.instance_root_path.clone(),
+        data_dir: new_connection.instance_data_dir.clone(),
+        release_id: Some(new_connection.release_id.clone()),
+        remote_host: Some(new_connection.remote_host.clone()),
+        remote_sync_port: Some(new_connection.remote_sync_port),
+        last_synced_at: None,
+        tes3mp_server_port: None,
+        sync_password: Some(new_connection.sync_password.clone()),
+    }
+}
+
+fn persist_owned_instance_to_config(
     state: &State<'_, Mutex<AppState>>,
     instance: InstanceConfig,
 ) -> Result<(NerevarConfig, AppHandle), String> {
@@ -212,6 +280,92 @@ fn persist_instance_to_config(
         .ok_or_else(|| "App handle not initialized".to_string())?;
 
     Ok((config, app_handle))
+}
+
+pub fn persist_synced_instance_to_config(
+    state: &State<'_, Mutex<AppState>>,
+    instance: InstanceConfig,
+) -> Result<(NerevarConfig, AppHandle), String> {
+    let mut guard = state
+        .lock()
+        .map_err(|_| "App state lock poisoned".to_string())?;
+
+    match guard.nerevar_config.synced_instances {
+        Some(ref mut synced_instances) => synced_instances.push(instance),
+        None => guard.nerevar_config.synced_instances = Some(vec![instance]),
+    }
+
+    std::fs::write(
+        Path::new(&guard.nerevar_config_path),
+        serde_json::to_string_pretty(&guard.nerevar_config).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+
+    let config = guard.nerevar_config.clone();
+    let app_handle = guard
+        .app_handle
+        .clone()
+        .ok_or_else(|| "App handle not initialized".to_string())?;
+
+    Ok((config, app_handle))
+}
+
+pub fn update_synced_instance(
+    state: &State<'_, Mutex<AppState>>,
+    instance: InstanceConfig,
+) -> Result<NerevarConfig, String> {
+    let mut guard = state
+        .lock()
+        .map_err(|_| "App state lock poisoned".to_string())?;
+
+    let synced = guard
+        .nerevar_config
+        .synced_instances
+        .as_mut()
+        .ok_or_else(|| "No synced instances configured".to_string())?;
+
+    let entry = synced
+        .iter_mut()
+        .find(|i| i.id == instance.id)
+        .ok_or_else(|| format!("Synced instance not found: {}", instance.id))?;
+    *entry = instance;
+
+    std::fs::write(
+        Path::new(&guard.nerevar_config_path),
+        serde_json::to_string_pretty(&guard.nerevar_config).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(guard.nerevar_config.clone())
+}
+
+pub fn update_owned_instance(
+    state: &State<'_, Mutex<AppState>>,
+    instance: InstanceConfig,
+) -> Result<NerevarConfig, String> {
+    let mut guard = state
+        .lock()
+        .map_err(|_| "App state lock poisoned".to_string())?;
+
+    let owned = guard
+        .nerevar_config
+        .owned_instances
+        .as_mut()
+        .ok_or_else(|| "No owned instances configured".to_string())?;
+
+    let entry = owned
+        .iter_mut()
+        .find(|i| i.id == instance.id)
+        .ok_or_else(|| format!("Owned instance not found: {}", instance.id))?;
+    *entry = instance;
+
+    std::fs::write(
+        Path::new(&guard.nerevar_config_path),
+        serde_json::to_string_pretty(&guard.nerevar_config).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(guard.nerevar_config.clone())
 }
 
 fn cleanup_failed_instance_root(path: &Path) {
@@ -242,6 +396,7 @@ pub async fn add_instance(
         std::fs::create_dir_all(instance_root).map_err(|e| e.to_string())?;
         let instance_data_dir = Path::new(&new_instance.instance_data_dir);
         create_instance_data_dir(instance_data_dir)?;
+        ensure_instance_data_layout(instance_data_dir)?;
 
         let tes3mp_dir = instance_tes3mp_dir(instance_root);
         std::fs::create_dir_all(&tes3mp_dir).map_err(|e| e.to_string())?;
@@ -263,7 +418,7 @@ pub async fn add_instance(
     }
 
     let instance = build_instance_config(&new_instance);
-    let (config, app_handle) = persist_instance_to_config(&state, instance)?;
+    let (config, app_handle) = persist_owned_instance_to_config(&state, instance)?;
 
     app_handle
         .emit("on_config_added_instance", config.clone())
@@ -318,63 +473,13 @@ pub async fn add_instance(
 // }
 
 pub async fn validate_global_openmw_config() -> Result<bool, String> {
-    let documents_dir =
-        dirs::document_dir().ok_or_else(|| "Failed to resolve documents directory".to_string())?;
-    let openmw_cfg_path = Path::new(&documents_dir).join("My Games/OpenMW/openmw.cfg");
-    if !openmw_cfg_path.exists() {
-        info!(
-            "OpenMW config file not found at {}",
-            openmw_cfg_path.display()
-        );
-        return Ok(false);
-    }
-    let contents = std::fs::read_to_string(&openmw_cfg_path).map_err(|e| e.to_string())?;
-    if contents.contains("data=") && contents.contains("Morrowind\\Data Files") {
-        return Ok(true);
-    } else {
-        info!(
-            "OpenMW config file exists but is invalid at {}",
-            openmw_cfg_path.display()
-        );
-        return Ok(false);
-    }
+    crate::openmw_ini_importer::validate_nerevar_openmw_scaffold()
 }
 
 pub async fn generate_default_global_openmw_config(
     morrowind_installation_path: String,
 ) -> Result<(), String> {
-    use crate::openmw_ini_importer::{
-        import_morrowind_ini, quote_data_path, resolve_morrowind_ini, ImportOptions, IniEncoding,
-        MultiStrMap,
-    };
-
-    let documents_dir =
-        dirs::document_dir().ok_or_else(|| "Failed to resolve documents directory".to_string())?;
-    let openmw_cfg_path = Path::new(&documents_dir).join("My Games/OpenMW/openmw.cfg");
-    if openmw_cfg_path.exists() {
-        return Ok(());
-    }
-
-    let data_files_path = Path::new(&morrowind_installation_path);
-    let morrowind_ini = resolve_morrowind_ini(data_files_path).ok_or_else(|| {
-        format!(
-            "Could not find Morrowind.ini near {}",
-            data_files_path.display()
-        )
-    })?;
-
-    let mut seed = MultiStrMap::new();
-    seed.insert("encoding".to_string(), vec!["win1252".to_string()]);
-    seed.insert("data".to_string(), vec![quote_data_path(data_files_path)]);
-
-    import_morrowind_ini(
-        &morrowind_ini,
-        &openmw_cfg_path,
-        seed,
-        ImportOptions {
-            encoding: IniEncoding::Win1252,
-            import_game_files: true,
-            import_archives: true,
-        },
-    )
+    crate::openmw_ini_importer::setup_nerevar_openmw_scaffold(Path::new(
+        &morrowind_installation_path,
+    ))
 }

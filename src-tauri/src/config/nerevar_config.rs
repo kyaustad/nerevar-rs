@@ -148,27 +148,37 @@ pub async fn set_root_path(state: State<'_, Mutex<AppState>>, path: String) -> R
 }
 
 pub async fn set_sync_port(state: State<'_, Mutex<AppState>>, port: i32) -> Result<(), String> {
-    let (config_path, config_snapshot, tx) = {
-        let mut guard = state.lock().unwrap();
+    if !(1..=65535).contains(&port) {
+        return Err(format!("Sync port must be between 1 and 65535, got {port}"));
+    }
+
+    let (config_path, config_snapshot, tx, app_handle) = {
+        let mut guard = state
+            .lock()
+            .map_err(|_| "App state lock poisoned".to_string())?;
         guard.nerevar_config.sync_port = port;
         (
             guard.nerevar_config_path.clone(),
             guard.nerevar_config.clone(),
             guard.server_port_tx.clone(),
+            guard.app_handle.clone(),
         )
     };
 
-    // Persist config first.
     std::fs::write(
         Path::new(&config_path),
         serde_json::to_string_pretty(&config_snapshot).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
 
-    // Then signal server supervisor (backend-only).
     if let Some(tx) = tx {
         let _ = tx.send(port);
     }
+
+    if let Some(app) = app_handle {
+        let _ = app.emit("on_config_change", config_snapshot);
+    }
+
     Ok(())
 }
 
@@ -188,6 +198,7 @@ fn build_instance_config(new_instance: &NewInstanceConfig) -> InstanceConfig {
         remote_sync_port: None,
         last_synced_at: None,
         tes3mp_server_port: None,
+        sync_password: None,
     }
 }
 
@@ -203,6 +214,7 @@ pub fn build_synced_instance_config(new_connection: &NewConnectionConfig) -> Ins
         remote_sync_port: Some(new_connection.remote_sync_port),
         last_synced_at: None,
         tes3mp_server_port: None,
+        sync_password: Some(new_connection.sync_password.clone()),
     }
 }
 
@@ -280,6 +292,35 @@ pub fn update_synced_instance(
         .iter_mut()
         .find(|i| i.id == instance.id)
         .ok_or_else(|| format!("Synced instance not found: {}", instance.id))?;
+    *entry = instance;
+
+    std::fs::write(
+        Path::new(&guard.nerevar_config_path),
+        serde_json::to_string_pretty(&guard.nerevar_config).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(guard.nerevar_config.clone())
+}
+
+pub fn update_owned_instance(
+    state: &State<'_, Mutex<AppState>>,
+    instance: InstanceConfig,
+) -> Result<NerevarConfig, String> {
+    let mut guard = state
+        .lock()
+        .map_err(|_| "App state lock poisoned".to_string())?;
+
+    let owned = guard
+        .nerevar_config
+        .owned_instances
+        .as_mut()
+        .ok_or_else(|| "No owned instances configured".to_string())?;
+
+    let entry = owned
+        .iter_mut()
+        .find(|i| i.id == instance.id)
+        .ok_or_else(|| format!("Owned instance not found: {}", instance.id))?;
     *entry = instance;
 
     std::fs::write(

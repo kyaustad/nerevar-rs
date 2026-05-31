@@ -15,8 +15,8 @@ pub use content_files::{
     is_openmw_content_file, is_openmw_content_path, is_record_plugin, RECORD_PLUGIN_EXTENSIONS,
 };
 pub use importer::{
-    find_plugin_in_data_paths, import_morrowind_ini, load_cfg_file, quote_data_path,
-    resolve_morrowind_ini, sort_content_plugins, write_to_file, ImportOptions, IniEncoding,
-    MultiStrMap,
+    apply_morrowind_ini_import, build_default_morrowind_ini, find_plugin_in_data_paths,
+    import_morrowind_ini, load_cfg_file, quote_data_path, resolve_morrowind_ini,
+    sort_content_plugins, write_to_file, ImportOptions, IniEncoding, MultiStrMap,
 };
 pub use plugin_index::{should_skip_plugin_search_dir, PluginIndex};

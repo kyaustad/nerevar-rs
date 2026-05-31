@@ -6,6 +6,7 @@ use reqwest::Client;
 use tauri::{AppHandle, Emitter};
 
 use crate::instance_data::{package_abs_path, NerevarManifest};
+use crate::sync_auth::SYNC_PASSWORD_HEADER;
 
 use super::types::{SyncPhase, SyncProgressEvent};
 
@@ -41,6 +42,7 @@ pub async fn download_manifest_files(
     instance_id: &str,
     host: &str,
     port: u16,
+    sync_password: Option<&str>,
     data_dir: &Path,
     manifest: &NerevarManifest,
     cancel: Arc<AtomicBool>,
@@ -95,12 +97,20 @@ pub async fn download_manifest_files(
                 Some(file_entry.path.clone()),
             );
 
-            let response = client
+            let mut request = client
                 .get(&url)
-                .header("User-Agent", "Nerevar-0.1.0")
+                .header("User-Agent", "Nerevar-0.1.0");
+            if let Some(password) = sync_password.filter(|value| !value.is_empty()) {
+                request = request.header(SYNC_PASSWORD_HEADER, password);
+            }
+            let response = request
                 .send()
                 .await
                 .map_err(|e| format!("Failed to download {}: {e}", file_entry.path))?;
+
+            if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+                return Err("Sync password required or incorrect".to_string());
+            }
 
             if !response.status().is_success() {
                 return Err(format!(

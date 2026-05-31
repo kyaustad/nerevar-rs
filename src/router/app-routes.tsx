@@ -8,6 +8,8 @@ import {
 import { Link, Route, Router, Switch, useLocation } from "wouter";
 import { NewInstancePage } from "@/features/instances/pages/new-owned-instance";
 import { NewConnectionPage } from "@/features/instances/pages/new-connection";
+import { Mo2PluginPage } from "@/features/mo2/pages/mo2-plugin-page";
+import { NerevarSettingsPage } from "@/features/settings/pages/nerevar-settings-page";
 import { Dashboard } from "@/features/dashboard/components/dashboard";
 import { useEffect, useState } from "react";
 
@@ -62,6 +64,8 @@ export function AppRoutes() {
           <Route path="/synced-instances" component={SyncedInstancesOverview} />
           <Route path="/new-instance" component={NewInstancePage} />
           <Route path="/new-connection" component={NewConnectionPage} />
+          <Route path="/mo2" component={Mo2PluginPage} />
+          <Route path="/settings" component={NerevarSettingsPage} />
           <Route path="/instances/:id/data" component={InstanceDataManagerPage} />
           <Route path="/instances/:id" component={InstanceDetailPage} />
           <Route component={NotFound} />

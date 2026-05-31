@@ -20,6 +20,34 @@ pub struct InstanceConfig {
     pub last_synced_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tes3mp_server_port: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_password: Option<String>,
+}
+
+#[derive(TS, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct InstanceEditPayload {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub host: String,
+    pub port: u16,
+    pub password: String,
+}
+
+#[derive(TS, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct InstanceConnectionSettings {
+    pub name: String,
+    pub description: String,
+    pub host: String,
+    pub port: u16,
+    pub password: String,
+    pub is_synced: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_port: Option<u16>,
 }
 
 #[derive(TS, Serialize, Deserialize, Clone)]
@@ -33,6 +61,7 @@ pub struct NewConnectionConfig {
     pub instance_data_dir: String,
     pub remote_host: String,
     pub remote_sync_port: u16,
+    pub sync_password: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, TS)]

@@ -12,6 +12,7 @@ import { Link } from "wouter";
 import {
   Calendar,
   ChevronRight,
+  Folder,
   Layers,
   Play,
   Plus,
@@ -257,6 +258,16 @@ export function DashboardSettingsCard({ className }: { className?: string }) {
       href="/settings"
       icon={Settings}
       label="Nerevar Settings"
+      className={className}
+    />
+  );
+}
+export function DashboardMO2Card({ className }: { className?: string }) {
+  return (
+    <DashboardGoldCard
+      href="/mo2"
+      icon={Folder}
+      label="MO2 Plugin"
       className={className}
     />
   );

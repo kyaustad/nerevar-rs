@@ -1,6 +1,7 @@
 use reqwest::Client;
 
 use crate::instance_data::NerevarManifest;
+use crate::sync_auth::SYNC_PASSWORD_HEADER;
 
 use super::types::RemoteManifestSummary;
 
@@ -19,6 +20,16 @@ fn connection_error(context: &str, host: &str, port: u16, err: reqwest::Error) -
         format!("{context} at {url}: request timed out.")
     } else {
         format!("{context} at {url}: {err}")
+    }
+}
+
+fn apply_sync_password(
+    builder: reqwest::RequestBuilder,
+    sync_password: Option<&str>,
+) -> reqwest::RequestBuilder {
+    match sync_password.filter(|password| !password.is_empty()) {
+        Some(password) => builder.header(SYNC_PASSWORD_HEADER, password),
+        None => builder,
     }
 }
 
@@ -44,12 +55,17 @@ pub async fn ping_nerevar_server(host: &str, port: u16) -> Result<(), String> {
 pub async fn fetch_manifest_summary(
     host: &str,
     port: u16,
+    sync_password: Option<&str>,
 ) -> Result<RemoteManifestSummary, String> {
     let client = Client::new();
     let url = format!("{}/", base_url(host, port));
-    let response = client
-        .get(&url)
-        .header("User-Agent", "Nerevar-0.1.0")
+    let request = apply_sync_password(
+        client
+            .get(&url)
+            .header("User-Agent", "Nerevar-0.1.0"),
+        sync_password,
+    );
+    let response = request
         .send()
         .await
         .map_err(|e| connection_error("Failed to fetch manifest summary", host, port, e))?;
@@ -58,6 +74,10 @@ pub async fn fetch_manifest_summary(
         return Err(
             "No instance is hosting sync yet. On the host instance, use \"Activate Nerevar syncing\" or save & host from the data manager.".to_string(),
         );
+    }
+
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err("Sync password required or incorrect".to_string());
     }
 
     if !response.status().is_success() {
@@ -72,12 +92,20 @@ pub async fn fetch_manifest_summary(
         .map_err(|e| format!("Invalid manifest summary response: {e}"))
 }
 
-pub async fn fetch_full_manifest(host: &str, port: u16) -> Result<NerevarManifest, String> {
+pub async fn fetch_full_manifest(
+    host: &str,
+    port: u16,
+    sync_password: Option<&str>,
+) -> Result<NerevarManifest, String> {
     let client = Client::new();
     let url = format!("{}/manifest", base_url(host, port));
-    let response = client
-        .get(&url)
-        .header("User-Agent", "Nerevar-0.1.0")
+    let request = apply_sync_password(
+        client
+            .get(&url)
+            .header("User-Agent", "Nerevar-0.1.0"),
+        sync_password,
+    );
+    let response = request
         .send()
         .await
         .map_err(|e| connection_error("Failed to fetch manifest", host, port, e))?;
@@ -86,6 +114,10 @@ pub async fn fetch_full_manifest(host: &str, port: u16) -> Result<NerevarManifes
         return Err(
             "No instance is hosting sync yet. On the host instance, use \"Activate Nerevar syncing\" or save & host from the data manager.".to_string(),
         );
+    }
+
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err("Sync password required or incorrect".to_string());
     }
 
     if !response.status().is_success() {

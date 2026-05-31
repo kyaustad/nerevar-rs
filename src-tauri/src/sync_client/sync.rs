@@ -42,6 +42,7 @@ pub async fn sync_if_needed(
     let port = instance
         .remote_sync_port
         .ok_or_else(|| "Instance has no remote sync port configured".to_string())?;
+    let sync_password = instance.sync_password.as_deref();
 
     let instance_id = instance.id.clone();
     let data_dir = resolve_package_data_dir(instance);
@@ -53,6 +54,7 @@ pub async fn sync_if_needed(
         &instance_id,
         host,
         port,
+        sync_password,
         &data_dir,
         cancel.clone(),
         force,
@@ -85,6 +87,7 @@ async fn sync_if_needed_inner(
     instance_id: &str,
     host: &str,
     port: u16,
+    sync_password: Option<&str>,
     data_dir: &Path,
     cancel: Arc<std::sync::atomic::AtomicBool>,
     force: bool,
@@ -113,7 +116,7 @@ async fn sync_if_needed_inner(
         0,
         1,
     );
-    let remote = fetch_full_manifest(host, port).await?;
+    let remote = fetch_full_manifest(host, port, sync_password).await?;
 
     let needs_download = if force {
         true
@@ -157,6 +160,7 @@ async fn sync_if_needed_inner(
         instance_id,
         host,
         port,
+        sync_password,
         data_dir,
         &remote,
         cancel.clone(),

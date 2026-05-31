@@ -93,6 +93,7 @@ mod tests {
             remote_sync_port: None,
             last_synced_at: None,
             tes3mp_server_port: None,
+            sync_password: None,
         }
     }
 

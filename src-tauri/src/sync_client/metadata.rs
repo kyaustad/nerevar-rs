@@ -16,11 +16,16 @@ pub fn write_synced_client_connection(
         .as_deref()
         .ok_or_else(|| "Synced instance has no remote host".to_string())?;
     let port = manifest.tes3mp_server_port;
+    let password = instance
+        .sync_password
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .unwrap_or(manifest.tes3mp_server_password.as_str());
     crate::instance_setup::write_tes3mp_client_connection(
         &crate::instance_setup::instance_tes3mp_dir(Path::new(&instance.path)),
         host,
         port,
-        &manifest.tes3mp_server_password,
+        password,
     )
     .map(|_| ())
 }

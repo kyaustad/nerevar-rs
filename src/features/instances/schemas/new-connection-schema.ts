@@ -22,6 +22,7 @@ export const newConnectionSchema = z.object({
     .int("Port must be a whole number")
     .min(1, "Port must be at least 1")
     .max(65535, "Port must be at most 65535"),
+  syncPassword: z.string(),
 });
 
 export type NewConnectionFormValues = z.infer<typeof newConnectionSchema>;
@@ -34,4 +35,5 @@ export const newConnectionDefaultValues: NewConnectionFormValues = {
   instanceDataDir: "",
   remoteHost: "127.0.0.1",
   remoteSyncPort: 25567,
+  syncPassword: "",
 };

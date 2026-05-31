@@ -256,8 +256,8 @@ function MorrowindInstallationStep({ onNext }: { onNext: () => void }) {
     const path = await invoke<string>("open_esm_file_picker");
     if (path) {
       // remove the morrowind.esm from the path to return just the Data Files portion
-      if (path.includes(`\\Morrowind.esm`)) {
-        setMorrowindInstallationPath(path.replace(`\\Morrowind.esm`, ""));
+      if (path.match(/[/\\]Morrowind\.esm$/i)) {
+        setMorrowindInstallationPath(path.replace(/[/\\]Morrowind\.esm$/i, ""));
       } else {
         toast.error("Selected file is not the Morrowind.esm file");
       }
@@ -318,7 +318,11 @@ function MorrowindInstallationStep({ onNext }: { onNext: () => void }) {
           <code className="font-mono text-sm text-accent bg-secondary/70 p-1 whitespace-nowrap">
             openmw.nerevar.cfg
           </code>{" "}
-          as the base config used when launching TES3MP through Nerevar.
+          as the base config used when launching TES3MP through Nerevar. A{" "}
+          <code className="font-mono text-sm text-accent bg-secondary/70 p-1 whitespace-nowrap">
+            Morrowind.ini
+          </code>{" "}
+          file is not required if you have never launched the game.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 px-6 py-5">

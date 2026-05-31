@@ -264,6 +264,7 @@ pub async fn save_and_host_instance(
 ) -> Result<NerevarManifest, String> {
     let (id, name, instance_root, data_dir) = resolve_instance_data_dir(&state, &instance_id)?;
     let data_dir_for_host = data_dir.clone();
+    let instance_root_for_host = instance_root.clone();
     let progress_instance_id = instance_id.clone();
     let app_for_host = app.clone();
     let manifest = tauri::async_runtime::spawn_blocking(move || {
@@ -296,6 +297,7 @@ pub async fn save_and_host_instance(
         .map_err(|_| "Sync host lock poisoned".to_string())?;
     host.hosting_instance_id = Some(instance_id);
     host.hosting_data_dir = Some(data_dir_for_host);
+    host.hosting_instance_root = Some(instance_root_for_host);
 
     let _ = app_for_host.emit("hosting-changed", ());
     Ok(manifest)
@@ -311,6 +313,7 @@ pub async fn set_hosting_instance(
 ) -> Result<NerevarManifest, String> {
     let (id, name, instance_root, data_dir) = resolve_instance_data_dir(&state, &instance_id)?;
     let data_dir_for_host = data_dir.clone();
+    let instance_root_for_host = instance_root.clone();
     let load_order = load_load_order(&data_dir)?;
     let progress_instance_id = instance_id.clone();
     let app_for_host = app.clone();
@@ -333,6 +336,7 @@ pub async fn set_hosting_instance(
         .map_err(|_| "Sync host lock poisoned".to_string())?;
     host.hosting_instance_id = Some(instance_id);
     host.hosting_data_dir = Some(data_dir_for_host);
+    host.hosting_instance_root = Some(instance_root_for_host);
 
     let _ = app_for_host.emit("hosting-changed", ());
     Ok(manifest)

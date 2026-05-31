@@ -11,7 +11,9 @@ use crate::instance_data::find_instance_by_id;
 use crate::instance_data::{
     load_manifest, resolve_package_data_dir, ManifestValidationResult,
 };
-use crate::instance_setup::{create_instance_data_dir, instance_tes3mp_dir};
+use crate::instance_setup::{
+    create_instance_data_dir, instance_tes3mp_dir, write_tes3mp_client_connection,
+};
 use crate::instance_data::ensure_instance_data_layout;
 use crate::github_getters;
 use crate::process_manager::{
@@ -36,8 +38,14 @@ pub async fn ping_remote_nerevar_server(
 pub async fn fetch_remote_manifest_summary(
     remote_host: String,
     remote_sync_port: u16,
+    sync_password: Option<String>,
 ) -> Result<RemoteManifestSummary, String> {
-    fetch_manifest_summary(&remote_host, remote_sync_port).await
+    fetch_manifest_summary(
+        &remote_host,
+        remote_sync_port,
+        sync_password.as_deref(),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -58,6 +66,7 @@ pub async fn add_synced_connection(
     let summary = fetch_manifest_summary(
         &new_connection.remote_host,
         new_connection.remote_sync_port,
+        Some(new_connection.sync_password.as_str()),
     )
     .await?;
 
@@ -75,6 +84,13 @@ pub async fn add_synced_connection(
             tes3mp_dir.to_string_lossy().into_owned(),
         )
         .await?;
+
+        write_tes3mp_client_connection(
+            &tes3mp_dir,
+            &new_connection.remote_host,
+            summary.tes3mp_server_port,
+            &new_connection.sync_password,
+        )?;
 
         Ok::<(), String>(())
     })

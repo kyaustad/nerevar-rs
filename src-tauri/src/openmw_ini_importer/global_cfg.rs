@@ -2,8 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::importer::{
-    cfg_to_string, import_morrowind_ini, load_cfg_file, parse_cfg_contents, quote_data_path,
-    resolve_morrowind_ini, ImportOptions, IniEncoding, MultiStrMap,
+    apply_morrowind_ini_import, build_default_morrowind_ini, cfg_to_string, load_cfg_file,
+    parse_cfg_contents, quote_data_path, resolve_morrowind_ini, ImportOptions, IniEncoding,
+    MultiStrMap,
 };
 
 pub const OPENMW_CFG: &str = "openmw.cfg";
@@ -64,6 +65,13 @@ pub fn setup_nerevar_openmw_scaffold(morrowind_data_files: &Path) -> Result<(), 
     fs::create_dir_all(&paths.dir)
         .map_err(|e| format!("Failed to create {}: {e}", paths.dir.display()))?;
 
+    if !morrowind_data_files.join("Morrowind.esm").is_file() {
+        return Err(format!(
+            "Morrowind.esm not found in {}",
+            morrowind_data_files.display()
+        ));
+    }
+
     if paths.active.is_file() {
         fs::copy(&paths.active, &paths.backup).map_err(|e| {
             format!(
@@ -74,12 +82,10 @@ pub fn setup_nerevar_openmw_scaffold(morrowind_data_files: &Path) -> Result<(), 
         })?;
     }
 
-    let morrowind_ini = resolve_morrowind_ini(morrowind_data_files).ok_or_else(|| {
-        format!(
-            "Could not find Morrowind.ini near {}",
-            morrowind_data_files.display()
-        )
-    })?;
+    let ini = match resolve_morrowind_ini(morrowind_data_files) {
+        Some(morrowind_ini) => super::importer::load_ini_file(&morrowind_ini, IniEncoding::Win1252)?,
+        None => build_default_morrowind_ini(morrowind_data_files),
+    };
 
     let mut seed = MultiStrMap::new();
     seed.insert("encoding".to_string(), vec!["win1252".to_string()]);
@@ -88,8 +94,8 @@ pub fn setup_nerevar_openmw_scaffold(morrowind_data_files: &Path) -> Result<(), 
         vec![quote_data_path(morrowind_data_files)],
     );
 
-    import_morrowind_ini(
-        &morrowind_ini,
+    apply_morrowind_ini_import(
+        &ini,
         &paths.nerevar,
         seed,
         ImportOptions {
@@ -97,6 +103,7 @@ pub fn setup_nerevar_openmw_scaffold(morrowind_data_files: &Path) -> Result<(), 
             import_game_files: false,
             import_archives: true,
         },
+        morrowind_data_files,
     )
 }
 

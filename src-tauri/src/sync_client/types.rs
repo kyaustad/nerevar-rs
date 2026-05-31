@@ -38,6 +38,7 @@ pub struct RemoteManifestSummary {
     pub total_download_bytes: u64,
     pub package_count: u32,
     pub tes3mp_server_port: u16,
+    pub password_required: bool,
     pub packages: Vec<RemotePackageSummary>,
 }
 

@@ -24,15 +24,13 @@ export function ProcessSideRailGate({ side }: { side: "left" | "right" }) {
   if (!config?.onboardingComplete) return null;
 
   return (
-    <ProcessSideRail
-      role={side === "left" ? "server" : "client"}
-      side={side}
-    />
+    <ProcessSideRail role={side === "left" ? "server" : "client"} side={side} />
   );
 }
 
 function ProcessSideRail({ role, side }: ProcessSideRailProps) {
-  const { client, server, stop, clear, resolveInstanceName } = useProcessStatus();
+  const { client, server, stop, clear, resolveInstanceName } =
+    useProcessStatus();
   const [open, setOpen] = useState(false);
   const state = role === "client" ? client : server;
   const Icon = role === "client" ? Play : Server;
@@ -68,7 +66,9 @@ function ProcessSideRail({ role, side }: ProcessSideRailProps) {
         <Icon
           className={cn(
             "size-3.5 shrink-0",
-            active ? "text-accent" : "text-foreground/45 group-hover:text-foreground/70",
+            active
+              ? "text-accent"
+              : "text-foreground/45 group-hover:text-foreground/70",
           )}
         />
         <span
@@ -89,7 +89,7 @@ function ProcessSideRail({ role, side }: ProcessSideRailProps) {
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent
           side={side}
-          className="flex w-full flex-col gap-0 border-border/60 bg-card/95 p-0 sm:max-w-md"
+          className="flex w-full min-w-170 flex-col gap-0 border-border/60 bg-card/95 p-0 sm:max-w-md"
         >
           <SheetHeader className="border-b border-border/50 px-4 py-4 text-left">
             <SheetTitle className="font-display text-lg tracking-[0.12em] text-gradient-gold uppercase">
@@ -107,7 +107,9 @@ function ProcessSideRail({ role, side }: ProcessSideRailProps) {
           <div className="flex flex-wrap gap-2 border-b border-border/40 px-4 py-3">
             {state.instanceId ? (
               <Button variant="outline" size="sm" className="h-9" asChild>
-                <Link href={`/instances/${encodeURIComponent(state.instanceId)}`}>
+                <Link
+                  href={`/instances/${encodeURIComponent(state.instanceId)}`}
+                >
                   <ExternalLink data-icon="inline-start" />
                   View instance
                 </Link>

@@ -101,6 +101,7 @@ pub fn activate_hosting_instance(
         .map_err(|_| "Sync host lock poisoned".to_string())?;
     host.hosting_instance_id = Some(instance_id);
     host.hosting_data_dir = Some(data_dir);
+    host.hosting_instance_root = Some(Path::new(&instance.path).to_path_buf());
 
     emit_hosting_changed(&app);
     Ok(manifest)
@@ -116,6 +117,7 @@ pub fn clear_hosting_instance(
         .map_err(|_| "Sync host lock poisoned".to_string())?;
     host.hosting_instance_id = None;
     host.hosting_data_dir = None;
+    host.hosting_instance_root = None;
     emit_hosting_changed(&app);
     Ok(())
 }

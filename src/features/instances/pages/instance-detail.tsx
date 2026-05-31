@@ -9,6 +9,8 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { SyncProgressPanel } from "@/features/instances/components/sync-progress-panel";
+import { InstanceEditSection } from "@/features/instances/components/instance-edit-section";
+import { DeleteInstanceSection } from "@/features/instances/components/delete-instance-section";
 import { useConfig } from "@/features/config/context/config-context-provider";
 import { useInstanceProcess } from "@/features/instances/hooks/use-instance-process";
 import { useProcessStatus } from "@/features/instances/context/process-status-context";
@@ -132,6 +134,15 @@ function InstanceDetailShell({
         </CardHeader>
         <CardContent className="flex flex-col gap-5 py-5">
           {children}
+
+          <Separator className="bg-border/60" />
+
+          <DetailSection
+            title="Danger zone"
+            description="Remove this instance from Nerevar. You can optionally delete its files from disk."
+          >
+            <DeleteInstanceSection instance={instance} backHref={backHref} />
+          </DetailSection>
         </CardContent>
       </Card>
     </div>
@@ -321,6 +332,15 @@ function OwnedInstanceDetail({ instance }: { instance: InstanceConfig }) {
       <Separator className="bg-border/60" />
 
       <DetailSection
+        title="Settings"
+        description="Edit instance name, server hostname, game port, and password."
+      >
+        <InstanceEditSection instanceId={instance.id} isSynced={false} />
+      </DetailSection>
+
+      <Separator className="bg-border/60" />
+
+      <DetailSection
         title="Nerevar sync"
         description="Share mods and settings with connected players. Hosting uses the manifest already saved from the data manager — it does not rescan or rebuild files."
       >
@@ -450,6 +470,15 @@ function SyncedInstanceDetail({ instance }: { instance: InstanceConfig }) {
             Cancel sync
           </Button>
         </div>
+      </DetailSection>
+
+      <Separator className="bg-border/60" />
+
+      <DetailSection
+        title="Settings"
+        description="Edit connection name, Nerevar host, sync port, and password."
+      >
+        <InstanceEditSection instanceId={instance.id} isSynced />
       </DetailSection>
 
       <Separator className="bg-border/60" />

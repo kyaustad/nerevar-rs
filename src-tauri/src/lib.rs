@@ -6,15 +6,19 @@ mod file_actions;
 mod github_getters;
 mod instance_data;
 mod instance_setup;
+mod mo2_plugin;
 mod nerevar_server;
 mod openmw_ini_importer;
+mod port_conflict;
 mod process_manager;
+mod sync_auth;
 mod sync_client;
 mod sync_host;
 
 use crate::data::GithubReleaseResponse;
 use crate::data::NerevarConfig;
 use crate::data::NewInstanceConfig;
+use crate::port_conflict::PortConflict;
 use crate::process_manager::ProcessManager;
 use crate::sync_client::SyncCoordinator;
 use crate::sync_host::new_shared_sync_host;
@@ -29,6 +33,8 @@ struct AppState {
     nerevar_config_path: String,
     nerevar_config: NerevarConfig,
     server_port_tx: Option<watch::Sender<i32>>,
+    server_retry_tx: Option<watch::Sender<u64>>,
+    server_retry_generation: u64,
 }
 
 #[tauri::command]
@@ -162,10 +168,15 @@ pub fn run() {
                 .sync_port;
 
             let (tx, mut rx) = watch::channel(initial_port);
+            let (retry_tx, mut retry_rx) = watch::channel(0u64);
             app.state::<Mutex<AppState>>()
                 .lock()
                 .unwrap()
                 .server_port_tx = Some(tx);
+            app.state::<Mutex<AppState>>()
+                .lock()
+                .unwrap()
+                .server_retry_tx = Some(retry_tx);
 
             let sync_host = new_shared_sync_host();
             app.manage(sync_host.clone());
@@ -173,31 +184,114 @@ pub fn run() {
             app.manage(Arc::new(ProcessManager::new()));
 
             let server_ctx = nerevar_server::state::ServerContext::new(sync_host);
+            let app_handle = app.handle().clone();
+            let startup_config = app
+                .state::<Mutex<AppState>>()
+                .lock()
+                .unwrap()
+                .nerevar_config
+                .clone();
+
+            tauri::async_runtime::spawn(async move {
+                if let Ok(conflicts) = port_conflict::check_startup_conflicts(&startup_config) {
+                    port_conflict::emit_port_conflicts(&app_handle, conflicts);
+                }
+            });
+
+            let app_handle = app.handle().clone();
 
             tauri::async_runtime::spawn(async move {
                 let mut current_task: Option<tauri::async_runtime::JoinHandle<()>>;
 
-                let start = |port: i32, ctx: Arc<nerevar_server::state::ServerContext>| {
+                let start = |port: i32,
+                             ctx: Arc<nerevar_server::state::ServerContext>,
+                             app: tauri::AppHandle| {
                     tauri::async_runtime::spawn(async move {
-                        if let Err(err) = nerevar_server::start_web_server_on_port(port, ctx).await {
-                            tauri_plugin_log::log::error!(
-                                "NEREVAR SERVER: failed to start on port {port}: {err}"
-                            );
+                        match nerevar_server::try_bind(port).await {
+                            Ok(listener) => {
+                                if let Err(err) = nerevar_server::serve(listener, ctx).await {
+                                    tauri_plugin_log::log::error!(
+                                        "NEREVAR SERVER: stopped on port {port}: {err}"
+                                    );
+                                }
+                            }
+                            Err(err) => {
+                                tauri_plugin_log::log::error!(
+                                    "NEREVAR SERVER: failed to bind on port {port}: {err}"
+                                );
+                                if port_conflict::is_addr_in_use_error(&err) {
+                                    match port_conflict::conflict_for_port(
+                                        port as u16,
+                                        port_conflict::PortRole::NerevarSync,
+                                        None,
+                                        None,
+                                    ) {
+                                        Ok(Some(conflict)) => {
+                                            port_conflict::emit_port_conflicts(
+                                                &app,
+                                                vec![conflict],
+                                            );
+                                        }
+                                        Ok(None) => {
+                                            port_conflict::emit_port_conflicts(
+                                                &app,
+                                                vec![PortConflict {
+                                                    port: port as u16,
+                                                    role: port_conflict::PortRole::NerevarSync,
+                                                    pid: 0,
+                                                    process_name:
+                                                        "Unknown process".to_string(),
+                                                    executable_path: None,
+                                                    instance_id: None,
+                                                    instance_name: None,
+                                                }],
+                                            );
+                                        }
+                                        Err(parse_err) => {
+                                            tauri_plugin_log::log::error!(
+                                                "Failed to inspect port {port}: {parse_err}"
+                                            );
+                                        }
+                                    }
+                                }
+                            }
                         }
                     })
                 };
 
-                current_task = Some(start(*rx.borrow(), server_ctx.clone()));
+                let mut port = *rx.borrow();
+                current_task = Some(start(port, server_ctx.clone(), app_handle.clone()));
 
-                while rx.changed().await.is_ok() {
-                    let next_port = *rx.borrow();
-                    tauri_plugin_log::log::info!("NEREVAR SERVER: restarting on port {next_port}");
-
-                    if let Some(task) = current_task.take() {
-                        task.abort();
+                loop {
+                    tokio::select! {
+                        changed = rx.changed() => {
+                            if changed.is_err() {
+                                break;
+                            }
+                            port = *rx.borrow();
+                            tauri_plugin_log::log::info!(
+                                "NEREVAR SERVER: restarting on port {port}"
+                            );
+                            if let Some(task) = current_task.take() {
+                                task.abort();
+                            }
+                            current_task =
+                                Some(start(port, server_ctx.clone(), app_handle.clone()));
+                        }
+                        changed = retry_rx.changed() => {
+                            if changed.is_err() {
+                                break;
+                            }
+                            tauri_plugin_log::log::info!(
+                                "NEREVAR SERVER: retrying bind on port {port}"
+                            );
+                            if let Some(task) = current_task.take() {
+                                task.abort();
+                            }
+                            current_task =
+                                Some(start(port, server_ctx.clone(), app_handle.clone()));
+                        }
                     }
-
-                    current_task = Some(start(next_port, server_ctx.clone()));
                 }
             });
             Ok(())
@@ -241,6 +335,13 @@ pub fn run() {
             connection::commands::stop_instance_process,
             connection::commands::is_instance_process_running,
             connection::commands::get_global_process_status,
+            connection::instance_edit::get_instance_connection_settings,
+            connection::instance_edit::update_instance,
+            connection::instance_delete::delete_instance,
+            port_conflict::check_port_conflicts,
+            port_conflict::kill_port_process,
+            port_conflict::retry_sync_server,
+            mo2_plugin::install_mo2_export_plugin,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

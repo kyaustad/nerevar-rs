@@ -2,6 +2,7 @@ import {
   DashboardOwnedInstancesCard,
   DashboardSettingsCard,
   DashboardSyncedInstancesCard,
+  DashboardMO2Card,
 } from "@/features/instances/components/instance-cards";
 
 export function Dashboard() {
@@ -23,7 +24,10 @@ export function Dashboard() {
           </p>
         </div>
       </div>
-      <DashboardSettingsCard className="col-span-2" />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <DashboardSettingsCard className="" />
+        <DashboardMO2Card className="" />
+      </div>
     </div>
   );
 }

@@ -96,6 +96,7 @@ export function NewConnectionPage() {
         {
           remoteHost: parsed.data.remoteHost,
           remoteSyncPort: parsed.data.remoteSyncPort,
+          syncPassword: parsed.data.syncPassword || null,
         },
       );
       setPreview(summary);
@@ -118,6 +119,7 @@ export function NewConnectionPage() {
         instanceDataDir: values.instanceDataDir,
         remoteHost: values.remoteHost,
         remoteSyncPort: values.remoteSyncPort,
+        syncPassword: values.syncPassword,
       };
 
       const instanceId = await invoke<string>("add_synced_connection", {
@@ -253,6 +255,23 @@ export function NewConnectionPage() {
             </div>
 
             <Field>
+              <FieldLabel className={SECTION_LABEL} htmlFor="syncPassword">
+                Sync password
+              </FieldLabel>
+              <Input
+                id="syncPassword"
+                type="password"
+                autoComplete="off"
+                disabled={busy}
+                {...form.register("syncPassword")}
+              />
+              <p className="font-serif text-sm text-foreground/60">
+                Required when the host TES3MP server has a password. Also written
+                to tes3mp-client-default.cfg for game connection.
+              </p>
+            </Field>
+
+            <Field>
               <FieldLabel className={SECTION_LABEL} htmlFor="instanceRootPath">
                 Local instance path
               </FieldLabel>
@@ -274,6 +293,7 @@ export function NewConnectionPage() {
                 </p>
                 <p className="font-mono text-xs text-accent/80">
                   TES3MP server port: {preview.tes3mpServerPort}
+                  {preview.passwordRequired ? " · password required" : ""}
                 </p>
                 <ul className="font-mono text-[0.65rem] text-foreground/60 space-y-1 max-h-24 overflow-y-auto">
                   {preview.packages.map((pkg) => (

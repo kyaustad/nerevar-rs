@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 pub struct SyncHostState {
     pub hosting_instance_id: Option<String>,
     pub hosting_data_dir: Option<PathBuf>,
+    pub hosting_instance_root: Option<PathBuf>,
 }
 
 pub type SharedSyncHost = Arc<Mutex<SyncHostState>>;

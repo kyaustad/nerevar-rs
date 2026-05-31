@@ -17,10 +17,10 @@ class ExportModlistCSV(mobase.IPluginTool):
         return True
 
     def name(self):
-        return "Export Enabled Mods CSV"
+        return "Export Enabled Mods CSV for Nerevar"
 
     def author(self):
-        return "ChatGPT"
+        return "Nerevar"
 
     def description(self):
         return "Exports enabled mods and plugins to CSV"
@@ -32,7 +32,7 @@ class ExportModlistCSV(mobase.IPluginTool):
         return []
 
     def displayName(self):
-        return "Export Enabled Mods CSV"
+        return "Export Enabled Mods CSV for Nerevar"
 
     def tooltip(self):
         return "Export enabled mods and plugins"

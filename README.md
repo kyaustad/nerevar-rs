@@ -23,11 +23,11 @@ Nerevar is a desktop companion for [TES3MP](https://tes3mp.com/) that keeps ever
 ---
 
 <p align="center">
-  <img src="src/assets/screenshot-light-mode.png" alt="Nerevar dashboard in light mode" width="700" />
+  <img src="src/assets/screenshot-dark-mode.png" alt="Nerevar dashboard in dark mode" width="700" />
 </p>
 
 <p align="center">
-  <img src="src/assets/screenshot-dark-mode.png" alt="Nerevar dashboard in dark mode" width="700" />
+  <img src="src/assets/screenshot-light-mode.png" alt="Nerevar dashboard in light mode" width="700" />
 </p>
 
 ---

@@ -178,6 +178,7 @@ mod tests {
         LoadOrder, LoadOrderEntry, NerevarManifest, PackageKind, ResolvedOpenMwConfig,
         LOAD_ORDER_VERSION,
     };
+    use crate::instance_settings::InstanceSettings;
 
     #[test]
     fn resolve_orders_data_paths_by_priority() {
@@ -267,6 +268,7 @@ mod tests {
             tes3mp_server_port: 25565,
             tes3mp_server_password: String::new(),
             required_data_files: vec![],
+            instance_settings: InstanceSettings::default(),
         };
 
         let resolved = resolve_synced_load_order(&dir, &load_order, &manifest).unwrap();

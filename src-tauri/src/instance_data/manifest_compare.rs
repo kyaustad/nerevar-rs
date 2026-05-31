@@ -34,5 +34,9 @@ pub fn manifests_differ(local: &NerevarManifest, remote: &NerevarManifest) -> bo
         return true;
     }
 
+    if local.instance_settings != remote.instance_settings {
+        return true;
+    }
+
     false
 }

@@ -8,7 +8,8 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 use crate::instance_data::{
-    launch_cfg_path, resolve_instance_openmw_config, write_instance_launch_cfg,
+    launch_cfg_path, launch_settings_overlay_path, resolve_instance_openmw_config,
+    write_instance_launch_cfg,
 };
 use crate::instance_setup::{instance_tes3mp_dir, write_required_data_files_for_resolved};
 use crate::openmw_ini_importer::begin_global_openmw_launch;
@@ -92,10 +93,12 @@ fn pipe_process_output(
     });
 }
 
-fn prepare_launch_cfg(data_dir: &Path) -> Result<PathBuf, String> {
+fn prepare_launch_cfg(data_dir: &Path) -> Result<(PathBuf, Option<PathBuf>), String> {
     let resolved = resolve_instance_openmw_config(data_dir)?;
     write_instance_launch_cfg(data_dir, &resolved)?;
-    Ok(launch_cfg_path(data_dir))
+    let settings_overlay = launch_settings_overlay_path(data_dir);
+    let settings_path = settings_overlay.is_file().then_some(settings_overlay);
+    Ok((launch_cfg_path(data_dir), settings_path))
 }
 
 pub fn launch_tes3mp_client(
@@ -105,12 +108,12 @@ pub fn launch_tes3mp_client(
     instance_root: &Path,
     data_dir: &Path,
 ) -> Result<(), String> {
-    let launch_cfg = match prepare_launch_cfg(data_dir) {
-        Ok(path) => path,
+    let (launch_cfg, launch_settings) = match prepare_launch_cfg(data_dir) {
+        Ok(paths) => paths,
         Err(err) => return Err(err),
     };
 
-    let global_session = match begin_global_openmw_launch(&launch_cfg) {
+    let global_session = match begin_global_openmw_launch(&launch_cfg, launch_settings.as_deref()) {
         Ok(session) => session,
         Err(err) => return Err(err),
     };
@@ -203,7 +206,7 @@ pub fn launch_tes3mp_server(
     instance_root: &Path,
     data_dir: &Path,
 ) -> Result<(), String> {
-    let _launch_cfg = prepare_launch_cfg(data_dir)?;
+    let (launch_cfg, _launch_settings) = prepare_launch_cfg(data_dir)?;
     let tes3mp_dir = instance_tes3mp_dir(instance_root);
     let resolved = resolve_instance_openmw_config(data_dir)?;
     write_required_data_files_for_resolved(&tes3mp_dir, &resolved)?;

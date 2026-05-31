@@ -29,8 +29,8 @@ pub use progress::{
     BackgroundOperationPhase, BackgroundOperationProgressEvent, ProgressEmitter,
 };
 pub use paths::{
-    ensure_instance_data_layout, launch_cfg_path, manifest_path, package_abs_path,
-    resolve_package_data_dir,
+    ensure_instance_data_layout, launch_cfg_dir, launch_cfg_path, launch_settings_overlay_path,
+    manifest_path, nerevar_dir, package_abs_path, resolve_package_data_dir,
 };
 pub use prune::prune_local_against_manifest;
 pub use remove::delete_package;
@@ -51,6 +51,10 @@ mod bindings {
         SyncPhase, SyncProgressEvent,
     };
     use crate::sync_host::SyncHostStatus;
+    use crate::instance_settings::{
+        InstanceSettings, SettingCategory, SettingDefinition, SettingValue, SettingValueType,
+        Tes3mpGameSettingEntry,
+    };
     use ts_rs::{Config, TS};
 
     /// Run with `cargo test export_bindings` to refresh `src/types/*.ts`.
@@ -76,5 +80,11 @@ mod bindings {
         BackgroundOperationProgressEvent::export_all(&cfg)
             .expect("export BackgroundOperationProgressEvent");
         BackgroundOperationPhase::export(&cfg).expect("export BackgroundOperationPhase");
+        InstanceSettings::export_all(&cfg).expect("export InstanceSettings");
+        SettingDefinition::export_all(&cfg).expect("export SettingDefinition");
+        SettingValue::export_all(&cfg).expect("export SettingValue");
+        SettingValueType::export(&cfg).expect("export SettingValueType");
+        SettingCategory::export(&cfg).expect("export SettingCategory");
+        Tes3mpGameSettingEntry::export_all(&cfg).expect("export Tes3mpGameSettingEntry");
     }
 }

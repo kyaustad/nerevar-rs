@@ -26,6 +26,7 @@ import {
   RefreshCw,
   Server,
   Settings2,
+  ServerCog,
   Square,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -336,6 +337,20 @@ function OwnedInstanceDetail({ instance }: { instance: InstanceConfig }) {
         description="Edit instance name, server hostname, game port, and password."
       >
         <InstanceEditSection instanceId={instance.id} isSynced={false} />
+      </DetailSection>
+
+      <Separator className="bg-border/60" />
+
+      <DetailSection
+        title="Server settings"
+        description="Gameplay rules, graphics, and shader options synced with your manifest."
+      >
+        <Button variant="secondary" className="h-10 w-full" asChild>
+          <Link href={`/instances/${encodeURIComponent(instance.id)}/server-settings`}>
+            <ServerCog data-icon="inline-start" />
+            Open server settings
+          </Link>
+        </Button>
       </DetailSection>
 
       <Separator className="bg-border/60" />

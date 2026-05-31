@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::instance_settings::InstanceSettings;
+
 pub const LOAD_ORDER_VERSION: u32 = 1;
 pub const MANIFEST_VERSION: u32 = 1;
 
@@ -115,6 +117,8 @@ pub struct NerevarManifest {
     pub tes3mp_server_password: String,
     #[serde(default = "default_required_data_files")]
     pub required_data_files: Vec<RequiredDataFileEntry>,
+    #[serde(default)]
+    pub instance_settings: InstanceSettings,
 }
 
 fn default_required_data_files() -> Vec<RequiredDataFileEntry> {

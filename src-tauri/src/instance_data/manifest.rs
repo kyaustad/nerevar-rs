@@ -17,6 +17,9 @@ use crate::instance_setup::{
     build_required_data_files, instance_tes3mp_dir, read_tes3mp_server_settings,
     write_required_data_files,
 };
+use crate::instance_settings::{
+    apply_instance_settings_to_disk, load_instance_settings, write_launch_settings_overlay,
+};
 
 struct PackageWorkItem {
     index: usize,
@@ -62,6 +65,8 @@ pub fn build_manifest(
     }
 
     let server_settings = read_tes3mp_server_settings(&instance_tes3mp_dir(instance_root))?;
+    let instance_settings = load_instance_settings(data_dir)?;
+    apply_instance_settings_to_disk(instance_root, data_dir, &instance_settings)?;
     let required_data_files = build_required_data_files(&resolved)?;
     write_required_data_files(
         &instance_tes3mp_dir(instance_root),
@@ -150,6 +155,7 @@ pub fn build_manifest(
         tes3mp_server_port: server_settings.port,
         tes3mp_server_password: server_settings.password,
         required_data_files,
+        instance_settings,
     };
 
     if let Some(emitter) = shared_progress.as_ref() {

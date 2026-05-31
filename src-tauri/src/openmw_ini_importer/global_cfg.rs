@@ -10,6 +10,8 @@ use super::importer::{
 pub const OPENMW_CFG: &str = "openmw.cfg";
 pub const OPENMW_BACKUP_CFG: &str = "openmw.backup.cfg";
 pub const OPENMW_NEREVAR_CFG: &str = "openmw.nerevar.cfg";
+pub const OPENMW_SETTINGS: &str = "settings.cfg";
+pub const OPENMW_SETTINGS_BACKUP: &str = "settings.backup.cfg";
 
 #[derive(Debug, Clone)]
 pub struct OpenMwGlobalPaths {
@@ -17,11 +19,14 @@ pub struct OpenMwGlobalPaths {
     pub active: PathBuf,
     pub backup: PathBuf,
     pub nerevar: PathBuf,
+    pub settings_active: PathBuf,
+    pub settings_backup: PathBuf,
 }
 
 pub struct GlobalOpenMwLaunchSession {
     paths: OpenMwGlobalPaths,
-    restore_strategy: OpenMwRestoreStrategy,
+    openmw_restore: OpenMwRestoreStrategy,
+    settings_restore: Option<OpenMwRestoreStrategy>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +45,8 @@ pub fn resolve_openmw_global_paths() -> Result<OpenMwGlobalPaths, String> {
         active: dir.join(OPENMW_CFG),
         backup: dir.join(OPENMW_BACKUP_CFG),
         nerevar: dir.join(OPENMW_NEREVAR_CFG),
+        settings_active: dir.join(OPENMW_SETTINGS),
+        settings_backup: dir.join(OPENMW_SETTINGS_BACKUP),
         dir,
     })
 }
@@ -107,7 +114,10 @@ pub fn setup_nerevar_openmw_scaffold(morrowind_data_files: &Path) -> Result<(), 
     )
 }
 
-pub fn begin_global_openmw_launch(launch_cfg_path: &Path) -> Result<GlobalOpenMwLaunchSession, String> {
+pub fn begin_global_openmw_launch(
+    launch_cfg_path: &Path,
+    launch_settings_path: Option<&Path>,
+) -> Result<GlobalOpenMwLaunchSession, String> {
     let paths = resolve_openmw_global_paths()?;
     if !paths.nerevar.is_file() {
         return Err(
@@ -124,7 +134,7 @@ pub fn begin_global_openmw_launch(launch_cfg_path: &Path) -> Result<GlobalOpenMw
 
     let had_active_cfg = paths.active.is_file();
     let had_backup = paths.backup.is_file();
-    let restore_strategy = resolve_restore_strategy(had_active_cfg, had_backup);
+    let openmw_restore = resolve_restore_strategy(had_active_cfg, had_backup);
 
     if had_active_cfg {
         fs::copy(&paths.active, &paths.backup).map_err(|e| {
@@ -149,14 +159,65 @@ pub fn begin_global_openmw_launch(launch_cfg_path: &Path) -> Result<GlobalOpenMw
         )
     })?;
 
+    let settings_restore = apply_launch_settings_overlay(&paths, launch_settings_path)?;
+
     Ok(GlobalOpenMwLaunchSession {
         paths,
-        restore_strategy,
+        openmw_restore,
+        settings_restore,
     })
 }
 
+fn apply_launch_settings_overlay(
+    paths: &OpenMwGlobalPaths,
+    launch_settings_path: Option<&Path>,
+) -> Result<Option<OpenMwRestoreStrategy>, String> {
+    let Some(overlay_path) = launch_settings_path else {
+        return Ok(None);
+    };
+    if !overlay_path.is_file() {
+        return Ok(None);
+    }
+
+    let had_active_settings = paths.settings_active.is_file();
+    let had_settings_backup = paths.settings_backup.is_file();
+    let restore = resolve_restore_strategy(had_active_settings, had_settings_backup);
+
+    if had_active_settings {
+        fs::copy(&paths.settings_active, &paths.settings_backup).map_err(|e| {
+            format!(
+                "Failed to back up {} to {}: {e}",
+                paths.settings_active.display(),
+                paths.settings_backup.display()
+            )
+        })?;
+    }
+
+    let overlay = fs::read_to_string(overlay_path)
+        .map_err(|e| format!("Failed to read {}: {e}", overlay_path.display()))?;
+    let base = if had_active_settings {
+        fs::read_to_string(&paths.settings_active)
+            .map_err(|e| format!("Failed to read {}: {e}", paths.settings_active.display()))?
+    } else {
+        String::new()
+    };
+    let composed = crate::instance_settings::openmw_settings::merge_settings_overlay(&base, &overlay);
+    fs::write(&paths.settings_active, composed).map_err(|e| {
+        format!(
+            "Failed to write active OpenMW settings at {}: {e}",
+            paths.settings_active.display()
+        )
+    })?;
+
+    Ok(Some(restore))
+}
+
 pub fn restore_global_openmw_launch(session: GlobalOpenMwLaunchSession) -> Result<(), String> {
-    apply_openmw_restore(&session.paths, session.restore_strategy)
+    apply_openmw_restore(&session.paths, session.openmw_restore)?;
+    if let Some(strategy) = session.settings_restore {
+        apply_settings_restore(&session.paths, strategy)?;
+    }
+    Ok(())
 }
 
 fn resolve_restore_strategy(had_active_cfg: bool, had_backup: bool) -> OpenMwRestoreStrategy {
@@ -199,6 +260,47 @@ fn apply_openmw_restore(
                     format!(
                         "Failed to remove swapped OpenMW config at {}: {e}",
                         paths.active.display()
+                    )
+                })?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn apply_settings_restore(
+    paths: &OpenMwGlobalPaths,
+    strategy: OpenMwRestoreStrategy,
+) -> Result<(), String> {
+    match strategy {
+        OpenMwRestoreStrategy::FromBackup => {
+            if paths.settings_backup.is_file() {
+                fs::copy(&paths.settings_backup, &paths.settings_active).map_err(|e| {
+                    format!(
+                        "Failed to restore {} from {}: {e}",
+                        paths.settings_active.display(),
+                        paths.settings_backup.display()
+                    )
+                })?;
+                return Ok(());
+            }
+
+            if paths.settings_active.is_file() {
+                fs::remove_file(&paths.settings_active).map_err(|e| {
+                    format!(
+                        "Failed to remove swapped OpenMW settings at {}: {e}",
+                        paths.settings_active.display()
+                    )
+                })?;
+            }
+        }
+        OpenMwRestoreStrategy::RemoveActive => {
+            if paths.settings_active.is_file() {
+                fs::remove_file(&paths.settings_active).map_err(|e| {
+                    format!(
+                        "Failed to remove swapped OpenMW settings at {}: {e}",
+                        paths.settings_active.display()
                     )
                 })?;
             }
@@ -323,6 +425,8 @@ mod tests {
             active: dir.join(OPENMW_CFG),
             backup: dir.join(OPENMW_BACKUP_CFG),
             nerevar: dir.join(OPENMW_NEREVAR_CFG),
+            settings_active: dir.join(OPENMW_SETTINGS),
+            settings_backup: dir.join(OPENMW_SETTINGS_BACKUP),
         };
         fs::write(&paths.active, "content=Better Bodies.esp\n").unwrap();
 
@@ -344,6 +448,8 @@ mod tests {
             active: dir.join(OPENMW_CFG),
             backup: dir.join(OPENMW_BACKUP_CFG),
             nerevar: dir.join(OPENMW_NEREVAR_CFG),
+            settings_active: dir.join(OPENMW_SETTINGS),
+            settings_backup: dir.join(OPENMW_SETTINGS_BACKUP),
         };
         fs::write(&paths.backup, "encoding=win1252\n").unwrap();
         fs::write(&paths.active, "content=Better Bodies.esp\n").unwrap();

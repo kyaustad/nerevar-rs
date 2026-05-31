@@ -122,6 +122,7 @@ mod tests {
         ManifestFileEntry, ManifestPackage, NerevarManifest, PackageKind, ResolvedOpenMwConfig,
         MANIFEST_VERSION,
     };
+    use crate::instance_settings::InstanceSettings;
 
     #[test]
     fn prune_removes_orphan_packages_and_stale_files() {
@@ -168,6 +169,7 @@ mod tests {
             tes3mp_server_port: 25565,
             tes3mp_server_password: String::new(),
             required_data_files: vec![],
+            instance_settings: InstanceSettings::default(),
         };
 
         prune_local_against_manifest(&dir, &manifest).unwrap();

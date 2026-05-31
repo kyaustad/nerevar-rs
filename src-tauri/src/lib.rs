@@ -5,6 +5,7 @@ mod data;
 mod file_actions;
 mod github_getters;
 mod instance_data;
+mod instance_settings;
 mod instance_setup;
 mod mo2_plugin;
 mod nerevar_server;
@@ -399,6 +400,9 @@ pub fn run() {
             port_conflict::kill_port_process,
             port_conflict::retry_sync_server,
             mo2_plugin::install_mo2_export_plugin,
+            instance_settings::commands::get_instance_setting_definitions,
+            instance_settings::commands::get_instance_settings,
+            instance_settings::commands::save_instance_settings_command,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

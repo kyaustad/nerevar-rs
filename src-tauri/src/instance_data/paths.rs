@@ -60,6 +60,10 @@ fn effective_data_dir(instance_root: &Path, configured: &Path) -> PathBuf {
     configured.to_path_buf()
 }
 
+pub fn launch_settings_overlay_path(data_dir: &Path) -> PathBuf {
+    launch_cfg_dir(data_dir).join("openmw.launch.settings.cfg")
+}
+
 /// Ensure `.nerevar/launch/` and `.nerevar/cache/` exist under the instance data directory.
 pub fn ensure_instance_data_layout(data_dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(launch_cfg_dir(data_dir)).map_err(|e| {

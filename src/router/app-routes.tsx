@@ -1,5 +1,6 @@
 import { AppLayout } from "@/app/app-layout";
 import { InstanceDataManagerPage } from "@/features/instances/pages/instance-data-manager";
+import { InstanceServerSettingsRoutePage } from "@/features/instances/pages/instance-server-settings-page";
 import { InstanceDetailPage } from "@/features/instances/pages/instance-detail";
 import {
   OwnedInstancesOverview,
@@ -67,6 +68,10 @@ export function AppRoutes() {
           <Route path="/mo2" component={Mo2PluginPage} />
           <Route path="/settings" component={NerevarSettingsPage} />
           <Route path="/instances/:id/data" component={InstanceDataManagerPage} />
+          <Route
+            path="/instances/:id/server-settings"
+            component={InstanceServerSettingsRoutePage}
+          />
           <Route path="/instances/:id" component={InstanceDetailPage} />
           <Route component={NotFound} />
         </Switch>

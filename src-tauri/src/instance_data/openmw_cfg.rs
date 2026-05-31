@@ -12,6 +12,10 @@ use super::types::ResolvedOpenMwConfig;
 pub fn resolve_instance_openmw_config(data_dir: &Path) -> Result<ResolvedOpenMwConfig, String> {
     let load_order = load_load_order(data_dir)?;
     if let Ok(manifest) = load_manifest(data_dir) {
+        let _ = crate::instance_settings::write_launch_settings_overlay(
+            data_dir,
+            &manifest.instance_settings,
+        );
         resolve_synced_load_order(data_dir, &load_order, &manifest)
     } else {
         resolve_load_order(data_dir, &load_order)

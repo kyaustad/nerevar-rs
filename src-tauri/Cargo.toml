@@ -1,6 +1,6 @@
 [package]
 name = "nerevar"
-version = "0.1.5"
+version = "0.1.6"
 description = "Morrowind Multiplayer without the mod-list headaches."
 authors = ["Kyle Austad"]
 edition = "2021"

@@ -153,6 +153,14 @@ async fn sync_if_needed_inner(
         0,
         1,
     );
+
+    let previous_manifest = load_manifest(data_dir).ok();
+    let manifest_changed = previous_manifest
+        .as_ref()
+        .map(|local| manifests_differ(local, &remote))
+        .unwrap_or(true);
+    let skip_unchanged = manifest_changed && !force;
+
     persist_manifest(data_dir, &remote)?;
 
     download_manifest_files(
@@ -163,6 +171,11 @@ async fn sync_if_needed_inner(
         sync_password,
         data_dir,
         &remote,
+        if skip_unchanged {
+            previous_manifest.as_ref()
+        } else {
+            None
+        },
         cancel.clone(),
     )
     .await?;

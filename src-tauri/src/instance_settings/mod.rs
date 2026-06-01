@@ -16,7 +16,7 @@ pub use storage::{
     persist_settings_from_manifest, save_instance_settings, write_launch_settings_overlay,
 };
 pub use openmw_cfg_overrides::apply_openmw_cfg_override_lines;
-pub use openmw_settings::{format_settings_overlay, merge_settings_overlay};
+pub use openmw_settings::{format_settings_overlay, merge_settings_overlay, merge_user_session_changes};
 pub use types::{
     InstanceSettings, SettingCategory, SettingDefinition, SettingValue, SettingValueType,
     Tes3mpGameSettingEntry,

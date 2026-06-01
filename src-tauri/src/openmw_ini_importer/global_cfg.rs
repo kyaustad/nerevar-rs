@@ -27,6 +27,7 @@ pub struct GlobalOpenMwLaunchSession {
     paths: OpenMwGlobalPaths,
     openmw_restore: OpenMwRestoreStrategy,
     settings_restore: Option<OpenMwRestoreStrategy>,
+    settings_overlay: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,24 +160,26 @@ pub fn begin_global_openmw_launch(
         )
     })?;
 
-    let settings_restore = apply_launch_settings_overlay(&paths, launch_settings_path)?;
+    let (settings_restore, settings_overlay) =
+        apply_launch_settings_overlay(&paths, launch_settings_path)?;
 
     Ok(GlobalOpenMwLaunchSession {
         paths,
         openmw_restore,
         settings_restore,
+        settings_overlay,
     })
 }
 
 fn apply_launch_settings_overlay(
     paths: &OpenMwGlobalPaths,
     launch_settings_path: Option<&Path>,
-) -> Result<Option<OpenMwRestoreStrategy>, String> {
+) -> Result<(Option<OpenMwRestoreStrategy>, Option<String>), String> {
     let Some(overlay_path) = launch_settings_path else {
-        return Ok(None);
+        return Ok((None, None));
     };
     if !overlay_path.is_file() {
-        return Ok(None);
+        return Ok((None, None));
     }
 
     let had_active_settings = paths.settings_active.is_file();
@@ -209,13 +212,13 @@ fn apply_launch_settings_overlay(
         )
     })?;
 
-    Ok(Some(restore))
+    Ok((Some(restore), Some(overlay)))
 }
 
 pub fn restore_global_openmw_launch(session: GlobalOpenMwLaunchSession) -> Result<(), String> {
     apply_openmw_restore(&session.paths, session.openmw_restore)?;
     if let Some(strategy) = session.settings_restore {
-        apply_settings_restore(&session.paths, strategy)?;
+        apply_settings_restore(&session.paths, strategy, session.settings_overlay.as_deref())?;
     }
     Ok(())
 }
@@ -272,11 +275,35 @@ fn apply_openmw_restore(
 fn apply_settings_restore(
     paths: &OpenMwGlobalPaths,
     strategy: OpenMwRestoreStrategy,
+    overlay: Option<&str>,
 ) -> Result<(), String> {
     match strategy {
         OpenMwRestoreStrategy::FromBackup => {
             if paths.settings_backup.is_file() {
-                fs::copy(&paths.settings_backup, &paths.settings_active).map_err(|e| {
+                let backup = fs::read_to_string(&paths.settings_backup).map_err(|e| {
+                    format!(
+                        "Failed to read {}: {e}",
+                        paths.settings_backup.display()
+                    )
+                })?;
+                let restored = if let (Some(overlay_contents), true) =
+                    (overlay, paths.settings_active.is_file())
+                {
+                    let active = fs::read_to_string(&paths.settings_active).map_err(|e| {
+                        format!(
+                            "Failed to read {}: {e}",
+                            paths.settings_active.display()
+                        )
+                    })?;
+                    crate::instance_settings::merge_user_session_changes(
+                        &backup,
+                        &active,
+                        overlay_contents,
+                    )
+                } else {
+                    backup
+                };
+                fs::write(&paths.settings_active, restored).map_err(|e| {
                     format!(
                         "Failed to restore {} from {}: {e}",
                         paths.settings_active.display(),

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::types::{InstanceSettings, SettingValue};
+use super::types::InstanceSettings;
 
 pub fn format_settings_overlay(settings: &InstanceSettings) -> String {
     let mut out = String::from("# Nerevar instance launch settings overlay\n");
@@ -40,6 +40,32 @@ pub fn merge_settings_overlay(base: &str, overlay: &str) -> String {
     }
 
     render_settings_cfg(&base_sections)
+}
+
+pub fn merge_user_session_changes(
+    before_launch: &str,
+    after_session: &str,
+    overlay: &str,
+) -> String {
+    let mut restored = parse_settings_cfg(before_launch);
+    let session = parse_settings_cfg(after_session);
+    let managed = parse_settings_cfg(overlay);
+
+    for (section, entries) in session {
+        let target = restored.entry(section.clone()).or_default();
+        let managed_section = managed.get(&section);
+        for (key, value) in entries {
+            let managed_key = managed_section
+                .and_then(|keys| keys.get(&key))
+                .is_some();
+            if managed_key {
+                continue;
+            }
+            target.insert(key, value);
+        }
+    }
+
+    render_settings_cfg(&restored)
 }
 
 fn parse_settings_cfg(contents: &str) -> BTreeMap<String, BTreeMap<String, String>> {
@@ -110,5 +136,15 @@ mod tests {
         let overlay = format_settings_overlay(&settings);
         assert!(overlay.contains("[Cells]"));
         assert!(overlay.contains("viewing distance = 7168"));
+    }
+
+    #[test]
+    fn merge_user_session_changes_keeps_unmanaged_and_skips_managed() {
+        let before = "[GUI]\nsubtitles = false\n\n[Shaders]\nforce shaders = false\n";
+        let after = "[GUI]\nsubtitles = true\n\n[Shaders]\nforce shaders = true\n";
+        let overlay = "[Shaders]\nforce shaders = true\n";
+        let merged = merge_user_session_changes(before, after, overlay);
+        assert!(merged.contains("subtitles = true"));
+        assert!(merged.contains("force shaders = false"));
     }
 }

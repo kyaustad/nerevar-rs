@@ -7,7 +7,10 @@ use crate::openmw_ini_importer::{quote_data_path, sort_content_plugins, PluginIn
 
 const DEFAULT_BASE_ESMS: &[&str] = &["Morrowind.esm", "Tribunal.esm", "Bloodmoon.esm"];
 
-pub fn resolve_load_order(data_dir: &Path, load_order: &LoadOrder) -> Result<ResolvedOpenMwConfig, String> {
+pub fn resolve_load_order(
+    data_dir: &Path,
+    load_order: &LoadOrder,
+) -> Result<ResolvedOpenMwConfig, String> {
     let mut data_paths = Vec::new();
 
     if let Some(base) = &load_order.base_game_data {
@@ -16,11 +19,7 @@ pub fn resolve_load_order(data_dir: &Path, load_order: &LoadOrder) -> Result<Res
         }
     }
 
-    let mut enabled_entries: Vec<_> = load_order
-        .entries
-        .iter()
-        .filter(|e| e.enabled)
-        .collect();
+    let mut enabled_entries: Vec<_> = load_order.entries.iter().filter(|e| e.enabled).collect();
     enabled_entries.sort_by_key(|e| e.priority);
 
     for entry in &enabled_entries {
@@ -35,10 +34,9 @@ pub fn resolve_load_order(data_dir: &Path, load_order: &LoadOrder) -> Result<Res
             }
         }
     }
+    let has_explicit_content_order = load_order.content_order.is_some();
 
     let index = PluginIndex::build(&data_paths);
-    let mut content = resolve_content_plugins(load_order, &index, &plugin_names)?;
-
     if let Some(base_path) = load_order
         .base_game_data
         .as_ref()
@@ -46,11 +44,17 @@ pub fn resolve_load_order(data_dir: &Path, load_order: &LoadOrder) -> Result<Res
     {
         for esm in DEFAULT_BASE_ESMS {
             if base_path.join(esm).exists()
-                && !content.iter().any(|c| c.eq_ignore_ascii_case(esm))
+                && !plugin_names
+                    .iter()
+                    .any(|name| name.eq_ignore_ascii_case(esm))
             {
-                content.insert(0, esm.to_string());
+                plugin_names.push((*esm).to_string());
             }
         }
+    }
+    let mut content = resolve_content_plugins(load_order, &index, &plugin_names)?;
+
+    if !has_explicit_content_order {
         content = reorder_base_esms(content);
     }
 
@@ -280,6 +284,54 @@ mod tests {
             "expected Better Bodies.esp in synced content, got {:?}",
             resolved.content
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn explicit_content_order_can_reposition_base_esms() {
+        let dir = std::env::temp_dir().join(format!(
+            "nerevar-explicit-base-order-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        ensure_instance_data_layout(&dir).unwrap();
+
+        let base = dir.join("Base Data");
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::write(base.join("Morrowind.esm"), b"TES3").unwrap();
+        std::fs::write(base.join("Tribunal.esm"), b"TES3").unwrap();
+        std::fs::write(base.join("Bloodmoon.esm"), b"TES3").unwrap();
+
+        let load_order = LoadOrder {
+            version: LOAD_ORDER_VERSION,
+            base_game_data: Some(base.to_string_lossy().to_string()),
+            content_order: Some(vec![
+                "Morrowind.esm".into(),
+                "Bloodmoon.esm".into(),
+                "Tribunal.esm".into(),
+            ]),
+            entries: vec![],
+        };
+
+        let resolved = resolve_load_order(&dir, &load_order).unwrap();
+        let morrowind_pos = resolved
+            .content
+            .iter()
+            .position(|name| name.eq_ignore_ascii_case("Morrowind.esm"))
+            .unwrap();
+        let bloodmoon_pos = resolved
+            .content
+            .iter()
+            .position(|name| name.eq_ignore_ascii_case("Bloodmoon.esm"))
+            .unwrap();
+        let tribunal_pos = resolved
+            .content
+            .iter()
+            .position(|name| name.eq_ignore_ascii_case("Tribunal.esm"))
+            .unwrap();
+        assert!(morrowind_pos < bloodmoon_pos);
+        assert!(bloodmoon_pos < tribunal_pos);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

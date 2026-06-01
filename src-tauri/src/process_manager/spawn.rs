@@ -93,9 +93,10 @@ fn pipe_process_output(
     });
 }
 
-fn prepare_launch_cfg(data_dir: &Path) -> Result<(PathBuf, Option<PathBuf>), String> {
+    fn prepare_launch_cfg(data_dir: &Path) -> Result<(PathBuf, Option<PathBuf>), String> {
     let resolved = resolve_instance_openmw_config(data_dir)?;
-    write_instance_launch_cfg(data_dir, &resolved)?;
+    let settings = crate::instance_settings::load_instance_settings(data_dir)?;
+    write_instance_launch_cfg(data_dir, &resolved, &settings.openmw_cfg_overrides)?;
     let settings_overlay = launch_settings_overlay_path(data_dir);
     let settings_path = settings_overlay.is_file().then_some(settings_overlay);
     Ok((launch_cfg_path(data_dir), settings_path))

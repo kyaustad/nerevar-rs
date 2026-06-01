@@ -14,6 +14,17 @@ pub fn format_settings_overlay(settings: &InstanceSettings) -> String {
             out.push_str(&format!("{} = {}\n", key, value.as_settings_cfg_value()));
         }
     }
+
+    let manual = settings.openmw_settings_cfg_overrides.trim();
+    if !manual.is_empty() {
+        out.push('\n');
+        out.push_str("# Manual settings.cfg overrides\n");
+        out.push_str(manual);
+        if !manual.ends_with('\n') {
+            out.push('\n');
+        }
+    }
+
     out
 }
 
@@ -83,5 +94,21 @@ mod tests {
         let merged = merge_settings_overlay(base, overlay);
         assert!(merged.contains("auto use object normal maps = true"));
         assert!(merged.contains("force shaders = false"));
+    }
+
+    #[test]
+    fn format_settings_overlay_appends_manual_block() {
+        use crate::instance_settings::InstanceSettings;
+
+        let settings = InstanceSettings {
+            version: 1,
+            tes3mp_game_settings: vec![],
+            openmw_settings: Default::default(),
+            openmw_cfg_overrides: vec![],
+            openmw_settings_cfg_overrides: "[Cells]\nviewing distance = 7168".into(),
+        };
+        let overlay = format_settings_overlay(&settings);
+        assert!(overlay.contains("[Cells]"));
+        assert!(overlay.contains("viewing distance = 7168"));
     }
 }

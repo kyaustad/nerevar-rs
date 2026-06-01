@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::path::Path;
 
+use crate::instance_settings::apply_openmw_cfg_override_lines;
 use crate::openmw_ini_importer::MultiStrMap;
 
 use super::load_order::load_load_order;
@@ -26,20 +27,26 @@ pub fn resolve_instance_openmw_config(data_dir: &Path) -> Result<ResolvedOpenMwC
 pub fn write_instance_launch_cfg(
     data_dir: &Path,
     resolved: &ResolvedOpenMwConfig,
+    openmw_cfg_overrides: &[String],
 ) -> Result<(), String> {
     ensure_instance_data_layout(data_dir)?;
-    write_resolved_to_path(&launch_cfg_path(data_dir), resolved)
+    write_resolved_to_path(&launch_cfg_path(data_dir), resolved, openmw_cfg_overrides)
 }
 
 pub fn write_ephemeral_openmw_cfg(
     data_dir: &Path,
     resolved: &ResolvedOpenMwConfig,
+    openmw_cfg_overrides: &[String],
 ) -> Result<String, String> {
-    write_instance_launch_cfg(data_dir, resolved)?;
+    write_instance_launch_cfg(data_dir, resolved, openmw_cfg_overrides)?;
     Ok(launch_cfg_dir(data_dir).to_string_lossy().into_owned())
 }
 
-fn write_resolved_to_path(path: &Path, resolved: &ResolvedOpenMwConfig) -> Result<(), String> {
+fn write_resolved_to_path(
+    path: &Path,
+    resolved: &ResolvedOpenMwConfig,
+    openmw_cfg_overrides: &[String],
+) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create launch cfg directory: {e}"))?;
@@ -49,6 +56,7 @@ fn write_resolved_to_path(path: &Path, resolved: &ResolvedOpenMwConfig) -> Resul
     cfg.insert("encoding".to_string(), vec![resolved.encoding.clone()]);
     cfg.insert("data".to_string(), resolved.data_paths.clone());
     cfg.insert("content".to_string(), resolved.content.clone());
+    apply_openmw_cfg_override_lines(&mut cfg, openmw_cfg_overrides);
 
     let mut file =
         File::create(path).map_err(|e| format!("Failed to create launch cfg: {e}"))?;
@@ -84,13 +92,34 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("nerevar-openmw-cfg-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
 
-        let returned = write_ephemeral_openmw_cfg(&dir, &sample_resolved()).unwrap();
+        let returned = write_ephemeral_openmw_cfg(&dir, &sample_resolved(), &[]).unwrap();
         assert_eq!(returned, launch_cfg_dir(&dir).to_string_lossy());
         assert!(launch_cfg_path(&dir).is_file());
 
         let contents = std::fs::read_to_string(launch_cfg_path(&dir)).unwrap();
         assert!(contents.contains("content=Better Bodies.esp"));
         assert!(contents.contains("data="));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn writes_manual_openmw_cfg_overrides() {
+        let dir = std::env::temp_dir().join(format!(
+            "nerevar-openmw-cfg-overrides-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        write_ephemeral_openmw_cfg(
+            &dir,
+            &sample_resolved(),
+            &["groundcover=Mod.esp".into()],
+        )
+        .unwrap();
+
+        let contents = std::fs::read_to_string(launch_cfg_path(&dir)).unwrap();
+        assert!(contents.contains("groundcover=Mod.esp"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

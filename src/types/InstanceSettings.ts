@@ -6,4 +6,8 @@ export type InstanceSettings = {
   version: number;
   tes3mpGameSettings: Array<Tes3mpGameSettingEntry>;
   openmwSettings: Record<string, Record<string, SettingValue>>;
+  /** Extra `key=value` lines appended to openmw.launch.cfg */
+  openmwCfgOverrides: Array<string>;
+  /** Raw INI text appended to the settings.cfg launch overlay */
+  openmwSettingsCfgOverrides: string;
 };

@@ -326,11 +326,20 @@ pub fn default_instance_settings() -> InstanceSettings {
         version: INSTANCE_SETTINGS_VERSION,
         tes3mp_game_settings,
         openmw_settings,
+        openmw_cfg_overrides: Vec::new(),
+        openmw_settings_cfg_overrides: String::new(),
     }
 }
 
 pub fn normalize_instance_settings(mut settings: InstanceSettings) -> InstanceSettings {
     let defaults = default_instance_settings();
+
+    settings.openmw_cfg_overrides = settings
+        .openmw_cfg_overrides
+        .iter()
+        .map(|line| line.trim().to_string())
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .collect();
 
     for default_entry in &defaults.tes3mp_game_settings {
         if !settings

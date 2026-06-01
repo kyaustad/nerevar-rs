@@ -111,7 +111,7 @@ function InstanceDetailShell({
         </Link>
       </Button>
 
-      <Card className={detailCardClass}>
+      <Card className={detailCardClass} disableHover disableTap>
         <CardHeader className="border-b border-border/50 space-y-3 pb-4 pt-5">
           <div className="flex flex-wrap items-center gap-2">
             <Badge
@@ -346,7 +346,9 @@ function OwnedInstanceDetail({ instance }: { instance: InstanceConfig }) {
         description="Gameplay rules, graphics, and shader options synced with your manifest."
       >
         <Button variant="secondary" className="h-10 w-full" asChild>
-          <Link href={`/instances/${encodeURIComponent(instance.id)}/server-settings`}>
+          <Link
+            href={`/instances/${encodeURIComponent(instance.id)}/server-settings`}
+          >
             <ServerCog data-icon="inline-start" />
             Open server settings
           </Link>

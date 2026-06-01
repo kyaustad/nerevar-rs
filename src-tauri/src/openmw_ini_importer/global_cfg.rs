@@ -201,7 +201,7 @@ fn apply_launch_settings_overlay(
     } else {
         String::new()
     };
-    let composed = crate::instance_settings::openmw_settings::merge_settings_overlay(&base, &overlay);
+    let composed = crate::instance_settings::merge_settings_overlay(&base, &overlay);
     fs::write(&paths.settings_active, composed).map_err(|e| {
         format!(
             "Failed to write active OpenMW settings at {}: {e}",
@@ -361,6 +361,18 @@ fn merge_launch_overlay(mut base: MultiStrMap, launch: MultiStrMap) -> MultiStrM
         }
     }
 
+    for (key, values) in launch {
+        if matches!(key.as_str(), "encoding" | "content" | "data") {
+            continue;
+        }
+        let target = base.entry(key).or_default();
+        for value in values {
+            if !target.iter().any(|existing| existing == &value) {
+                target.push(value);
+            }
+        }
+    }
+
     base
 }
 
@@ -388,6 +400,16 @@ mod tests {
         assert_eq!(composed.matches("encoding=").count(), 1);
         assert_eq!(composed.matches("data=").count(), 2);
         assert!(composed.contains("content=Better Bodies.esp"));
+    }
+
+    #[test]
+    fn compose_merges_manual_openmw_cfg_overrides() {
+        let composed = compose_active_openmw_cfg(
+            "encoding=win1252\ndata=\"C:\\\\Morrowind\\\\Data Files\"",
+            "content=Morrowind.esm\ngroundcover=Mod.esp",
+        );
+        assert!(composed.contains("groundcover=Mod.esp"));
+        assert!(composed.contains("content=Morrowind.esm"));
     }
 
     #[test]

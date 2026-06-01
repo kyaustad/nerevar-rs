@@ -11,11 +11,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { INSTANCE_DATA_CARD_CLASS } from "@/features/instances/components/instance-data-manager";
-import {
-  displaySettingValue,
-  makeSettingValue,
-} from "@/lib/setting-value";
+import { displaySettingValue, makeSettingValue } from "@/lib/setting-value";
 import type {
   InstanceSettings,
   SettingDefinition,
@@ -143,17 +141,12 @@ function SettingField({
           const raw = event.target.value;
           if (definition.valueType === "integer") {
             onChange(
-              makeSettingValue(
-                "integer",
-                Number.parseInt(raw, 10) || 0,
-              ),
+              makeSettingValue("integer", Number.parseInt(raw, 10) || 0),
             );
             return;
           }
           if (definition.valueType === "float") {
-            onChange(
-              makeSettingValue("float", Number.parseFloat(raw) || 0),
-            );
+            onChange(makeSettingValue("float", Number.parseFloat(raw) || 0));
             return;
           }
           onChange(makeSettingValue("string", raw));
@@ -220,6 +213,83 @@ function SettingsGroup({
   );
 }
 
+function ManualOverridesSection({
+  settings,
+  readOnly,
+  onChange,
+}: {
+  settings: InstanceSettings;
+  readOnly?: boolean;
+  onChange: (settings: InstanceSettings) => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="space-y-1">
+        <h3 className="font-display text-sm tracking-[0.12em] text-accent uppercase">
+          Manual overrides
+        </h3>
+        <p className="font-serif text-sm leading-relaxed text-foreground/65">
+          Add OpenMW keys Nerevar does not expose in the UI. These are saved
+          with your instance settings, synced through the manifest, and merged
+          into each player&apos;s config at launch.
+        </p>
+      </div>
+
+      <div className="space-y-2 rounded-lg border border-border/50 bg-background/20 px-4 py-3">
+        <Label className="font-display text-sm tracking-[0.08em] text-foreground">
+          openmw.cfg lines
+        </Label>
+        <p className="font-serif text-sm leading-relaxed text-foreground/65">
+          One <code className="text-foreground/80">key=value</code> per line,
+          appended to the launch overlay and merged into{" "}
+          <code className="text-foreground/80">openmw.cfg</code>. Example:{" "}
+          <code className="text-foreground/80">groundcover=Mod.esp</code>
+        </p>
+        <Textarea
+          value={settings.openmwCfgOverrides.join("\n")}
+          disabled={readOnly}
+          className="min-h-32 font-mono text-sm"
+          placeholder={"groundcover=Mod.esp\ncontent=Extra.esp"}
+          onChange={(event) => {
+            onChange({
+              ...settings,
+              openmwCfgOverrides: event.target.value
+                .split("\n")
+                .map((line) => line.trim())
+                .filter((line) => line.length > 0),
+            });
+          }}
+        />
+      </div>
+
+      <div className="space-y-2 rounded-lg border border-border/50 bg-background/20 px-4 py-3">
+        <Label className="font-display text-sm tracking-[0.08em] text-foreground">
+          settings.cfg text
+        </Label>
+        <p className="font-serif text-sm leading-relaxed text-foreground/65">
+          Raw INI blocks appended to the settings launch overlay. Use standard{" "}
+          <code className="text-foreground/80">[Section]</code> headers and{" "}
+          <code className="text-foreground/80">key = value</code> lines.
+        </p>
+        <Textarea
+          value={settings.openmwSettingsCfgOverrides}
+          disabled={readOnly}
+          className="min-h-40 font-mono text-sm"
+          placeholder={
+            "[Cells]\nviewing distance = 7168\n\n[General]\ncamera sensitivity = 1.0"
+          }
+          onChange={(event) => {
+            onChange({
+              ...settings,
+              openmwSettingsCfgOverrides: event.target.value,
+            });
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function InstanceServerSettingsManager({
   instanceId,
   instanceName,
@@ -263,10 +333,13 @@ export function InstanceServerSettingsManager({
     if (!settings || readOnly) return;
     setSaving(true);
     try {
-      const saved = await invoke<InstanceSettings>("save_instance_settings_command", {
-        instanceId,
-        settings,
-      });
+      const saved = await invoke<InstanceSettings>(
+        "save_instance_settings_command",
+        {
+          instanceId,
+          settings,
+        },
+      );
       setSettings(saved);
       toast.success("Server settings saved");
     } catch (error) {
@@ -286,7 +359,7 @@ export function InstanceServerSettingsManager({
 
   return (
     <div className="flex flex-col gap-4">
-      <Card className={INSTANCE_DATA_CARD_CLASS}>
+      <Card className={INSTANCE_DATA_CARD_CLASS} disableHover disableTap>
         <CardHeader className="border-b border-border/50 px-6 pb-4 pt-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-2">
@@ -314,10 +387,11 @@ export function InstanceServerSettingsManager({
 
         <CardContent className="px-6 py-5">
           <Tabs defaultValue="gameplay" className="gap-4">
-            <TabsList className="grid h-auto w-full grid-cols-3 gap-1 bg-input/30 p-1">
+            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 bg-input/30 p-1 sm:grid-cols-4">
               <TabsTrigger value="gameplay">Gameplay</TabsTrigger>
               <TabsTrigger value="graphics">Graphics</TabsTrigger>
               <TabsTrigger value="shaders">Shaders</TabsTrigger>
+              <TabsTrigger value="advanced">Advanced</TabsTrigger>
             </TabsList>
 
             <TabsContent value="gameplay" className="mt-0 outline-none">
@@ -345,6 +419,13 @@ export function InstanceServerSettingsManager({
                 title="OpenMW shaders"
                 description="Shader and visual compatibility settings that affect how modded meshes, normal maps, and lighting render for all players."
                 definitions={grouped.shaders}
+                settings={settings}
+                readOnly={readOnly}
+                onChange={setSettings}
+              />
+            </TabsContent>
+            <TabsContent value="advanced" className="mt-0 outline-none">
+              <ManualOverridesSection
                 settings={settings}
                 readOnly={readOnly}
                 onChange={setSettings}

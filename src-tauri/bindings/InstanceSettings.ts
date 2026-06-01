@@ -6,4 +6,6 @@ export type InstanceSettings = {
   version: number;
   tes3mpGameSettings: Array<Tes3mpGameSettingEntry>;
   openmwSettings: Record<string, Record<string, SettingValue>>;
+  openmwCfgOverrides: Array<string>;
+  openmwSettingsCfgOverrides: string;
 };

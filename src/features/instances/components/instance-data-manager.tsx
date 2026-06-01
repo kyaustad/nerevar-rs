@@ -87,6 +87,60 @@ type InstanceDataManagerProps = {
   instanceId: string;
 };
 
+const BASE_GAME_ESMS = [
+  "Morrowind.esm",
+  "Tribunal.esm",
+  "Bloodmoon.esm",
+] as const;
+
+function dedupePluginNamesCaseInsensitive(names: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const name of names) {
+    const trimmed = name.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(trimmed);
+  }
+  return result;
+}
+
+function collectEnabledPluginNames(entries: LoadOrderEntry[]): string[] {
+  const names: string[] = [];
+  for (const entry of entries) {
+    if (!entry.enabled) continue;
+    for (const plugin of entry.plugins) {
+      if (plugin.enabled) {
+        names.push(plugin.file);
+      }
+    }
+  }
+  return dedupePluginNamesCaseInsensitive(names);
+}
+
+function buildEffectiveContentOrder(loadOrder: LoadOrder): string[] {
+  const orderedEntries = sortLoadOrderEntries(loadOrder.entries);
+  const enabledPlugins = collectEnabledPluginNames(orderedEntries);
+  const withBase = loadOrder.baseGameData
+    ? [...BASE_GAME_ESMS, ...enabledPlugins]
+    : enabledPlugins;
+  const seed = loadOrder.contentOrder ?? [];
+  const hasAnyBaseInSeed = BASE_GAME_ESMS.some((esm) =>
+    seed.some((name) => name.toLowerCase() === esm.toLowerCase()),
+  );
+  const initial =
+    loadOrder.baseGameData && !hasAnyBaseInSeed
+      ? [...BASE_GAME_ESMS, ...seed, ...withBase]
+      : [...seed, ...withBase];
+  return dedupePluginNamesCaseInsensitive(initial).filter((name) =>
+    withBase.some(
+      (candidate) => candidate.toLowerCase() === name.toLowerCase(),
+    ),
+  );
+}
+
 export function InstanceDataManager({
   instance,
   instanceId,
@@ -139,9 +193,10 @@ export function InstanceDataManager({
   const saveLoadOrder = async () => {
     if (!loadOrder) return;
     try {
-      const normalized = {
+      const normalized: LoadOrder = {
         ...loadOrder,
         entries: normalizePriorities(loadOrder.entries),
+        contentOrder: buildEffectiveContentOrder(loadOrder),
       };
       await runOperation({
         instanceId,
@@ -182,9 +237,10 @@ export function InstanceDataManager({
   const startHosting = async () => {
     if (!loadOrder) return;
     try {
-      const normalized = {
+      const normalized: LoadOrder = {
         ...loadOrder,
         entries: normalizePriorities(loadOrder.entries),
+        contentOrder: buildEffectiveContentOrder(loadOrder),
       };
       const manifest = await runOperation({
         instanceId,
@@ -268,37 +324,37 @@ export function InstanceDataManager({
 
   const togglePlugin = (entryId: string, file: string) => {
     if (!loadOrder) return;
-    setLoadOrder(
-      clearMo2ContentOrder({
-        ...loadOrder,
-        entries: loadOrder.entries.map((entry) => {
-          if (entry.id !== entryId) return entry;
-          return {
-            ...entry,
-            plugins: entry.plugins.map((p) =>
-              p.file === file ? { ...p, enabled: !p.enabled } : p,
-            ),
-          };
-        }),
+    const next: LoadOrder = {
+      ...loadOrder,
+      entries: loadOrder.entries.map((entry) => {
+        if (entry.id !== entryId) return entry;
+        return {
+          ...entry,
+          plugins: entry.plugins.map((p) =>
+            p.file === file ? { ...p, enabled: !p.enabled } : p,
+          ),
+        };
       }),
-    );
+    };
+    next.contentOrder = buildEffectiveContentOrder(next);
+    setLoadOrder(next);
   };
 
   const movePlugin = (entryId: string, index: number, direction: -1 | 1) => {
     if (!loadOrder) return;
-    setLoadOrder(
-      clearMo2ContentOrder({
-        ...loadOrder,
-        entries: loadOrder.entries.map((entry) => {
-          if (entry.id !== entryId) return entry;
-          const plugins = [...entry.plugins];
-          const target = index + direction;
-          if (target < 0 || target >= plugins.length) return entry;
-          [plugins[index], plugins[target]] = [plugins[target], plugins[index]];
-          return { ...entry, plugins };
-        }),
+    const next: LoadOrder = {
+      ...loadOrder,
+      entries: loadOrder.entries.map((entry) => {
+        if (entry.id !== entryId) return entry;
+        const plugins = [...entry.plugins];
+        const target = index + direction;
+        if (target < 0 || target >= plugins.length) return entry;
+        [plugins[index], plugins[target]] = [plugins[target], plugins[index]];
+        return { ...entry, plugins };
       }),
-    );
+    };
+    next.contentOrder = buildEffectiveContentOrder(next);
+    setLoadOrder(next);
   };
 
   const importMo2Modlist = async () => {
@@ -417,9 +473,20 @@ export function InstanceDataManager({
             <TabsContent value="plugins" className="mt-4">
               <div className="max-h-[min(60vh,720px)] overflow-y-auto rounded-lg border border-border/40 pr-1">
                 <PluginList
+                  loadOrder={loadOrder}
                   sortedEntries={sortedEntries}
                   onTogglePlugin={togglePlugin}
                   onMovePlugin={movePlugin}
+                  onContentOrderChange={(nextContentOrder) => {
+                    setLoadOrder((current) =>
+                      current
+                        ? {
+                            ...current,
+                            contentOrder: nextContentOrder,
+                          }
+                        : current,
+                    );
+                  }}
                 />
               </div>
             </TabsContent>
@@ -805,18 +872,150 @@ function SortableDirectoryRow({
 }
 
 function PluginList({
+  loadOrder,
   sortedEntries,
   onTogglePlugin,
   onMovePlugin,
+  onContentOrderChange,
 }: {
+  loadOrder: LoadOrder | null;
   sortedEntries: LoadOrderEntry[];
   onTogglePlugin: (entryId: string, file: string) => void;
   onMovePlugin: (entryId: string, index: number, direction: -1 | 1) => void;
+  onContentOrderChange: (nextContentOrder: string[]) => void;
 }) {
   const withPlugins = sortedEntries.filter((e) => e.plugins.length > 0);
+  const effectiveContentOrder = loadOrder
+    ? buildEffectiveContentOrder(loadOrder)
+    : [];
+  const [activePluginId, setActivePluginId] = useState<string | null>(null);
+  const [overlayWidth, setOverlayWidth] = useState<number | undefined>();
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
+  const activePlugin = activePluginId
+    ? effectiveContentOrder.find(
+        (plugin) => plugin.toLowerCase() === activePluginId,
+      ) ?? null
+    : null;
+
+  const moveGlobalPlugin = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      if (
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= effectiveContentOrder.length ||
+        toIndex >= effectiveContentOrder.length ||
+        fromIndex === toIndex
+      ) {
+        return;
+      }
+      const next = [...effectiveContentOrder];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      onContentOrderChange(next);
+    },
+    [effectiveContentOrder, onContentOrderChange],
+  );
+
+  const handlePluginDragStart = (event: DragStartEvent) => {
+    setOverlayWidth(scrollRef.current?.clientWidth);
+    setActivePluginId(String(event.active.id));
+  };
+
+  const handlePluginDragEnd = (event: DragEndEvent) => {
+    setActivePluginId(null);
+    setOverlayWidth(undefined);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const fromIndex = effectiveContentOrder.findIndex(
+      (plugin) => plugin.toLowerCase() === String(active.id),
+    );
+    const toIndex = effectiveContentOrder.findIndex(
+      (plugin) => plugin.toLowerCase() === String(over.id),
+    );
+    moveGlobalPlugin(fromIndex, toIndex);
+  };
+
+  const handlePluginDragCancel = () => {
+    setActivePluginId(null);
+    setOverlayWidth(undefined);
+  };
 
   return (
     <div className="space-y-4 p-1">
+      {loadOrder ? (
+        <div className="rounded-lg border border-border/50 bg-background/20 p-3">
+          <div className="mb-2 space-y-1">
+            <p className="font-display text-sm tracking-[0.15em] text-accent uppercase">
+              Global plugin load order
+            </p>
+            <p className="font-serif text-sm text-foreground/65">
+              Controls final <code>content=</code> order for launch config. Base
+              game ESMs are included and can be reordered with other plugins.
+            </p>
+          </div>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handlePluginDragStart}
+            onDragEnd={handlePluginDragEnd}
+            onDragCancel={handlePluginDragCancel}
+          >
+            <div
+              ref={scrollRef}
+              className="max-h-[min(38vh,420px)] overflow-y-auto rounded-lg border border-border/40 pr-1"
+            >
+              <SortableContext
+                items={effectiveContentOrder.map((plugin) =>
+                  plugin.toLowerCase(),
+                )}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-1 p-1">
+                  {effectiveContentOrder.map((plugin, index) => (
+                    <SortablePluginOrderRow
+                      key={plugin.toLowerCase()}
+                      plugin={plugin}
+                      index={index}
+                      total={effectiveContentOrder.length}
+                      onMoveUp={() => moveGlobalPlugin(index, index - 1)}
+                      onMoveDown={() => moveGlobalPlugin(index, index + 1)}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </div>
+            <DragOverlay dropAnimation={{ duration: 180, easing: "ease-out" }}>
+              {activePlugin ? (
+                <div style={{ width: overlayWidth }} className="max-w-full">
+                  <PluginOrderRowShell
+                    plugin={activePlugin}
+                    index={effectiveContentOrder.findIndex(
+                      (entry) =>
+                        entry.toLowerCase() === activePlugin.toLowerCase(),
+                    )}
+                    total={effectiveContentOrder.length}
+                    isOverlay
+                    onMoveUp={() => {}}
+                    onMoveDown={() => {}}
+                  />
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        </div>
+      ) : null}
+
       {withPlugins.map((entry) => (
         <div
           key={entry.id}
@@ -875,6 +1074,109 @@ function PluginList({
           No plugins detected in scanned folders.
         </p>
       ) : null}
+    </div>
+  );
+}
+
+function SortablePluginOrderRow({
+  plugin,
+  index,
+  total,
+  onMoveUp,
+  onMoveDown,
+}: {
+  plugin: string;
+  index: number;
+  total: number;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: plugin.toLowerCase() });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(isDragging && "opacity-40")}
+    >
+      <PluginOrderRowShell
+        plugin={plugin}
+        index={index}
+        total={total}
+        dragHandleProps={{ ...attributes, ...listeners }}
+        onMoveUp={onMoveUp}
+        onMoveDown={onMoveDown}
+      />
+    </div>
+  );
+}
+
+function PluginOrderRowShell({
+  plugin,
+  index,
+  total,
+  dragHandleProps,
+  isOverlay = false,
+  onMoveUp,
+  onMoveDown,
+}: {
+  plugin: string;
+  index: number;
+  total: number;
+  dragHandleProps?: HTMLAttributes<HTMLButtonElement>;
+  isOverlay?: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 rounded-md border border-border/50 bg-card px-2 py-1.5",
+        isOverlay &&
+          "cursor-grabbing shadow-[0_12px_40px_hsl(var(--background)/0.45)] ring-2 ring-accent/40",
+      )}
+    >
+      <button
+        type="button"
+        aria-label="Drag to reorder plugin"
+        className="inline-flex size-8 shrink-0 cursor-grab touch-none items-center justify-center rounded-md text-foreground/45 hover:bg-muted/40 hover:text-foreground/75 active:cursor-grabbing"
+        {...dragHandleProps}
+      >
+        <GripVertical className="size-4" />
+      </button>
+      <span className="flex-1 font-mono text-sm">{plugin}</span>
+      <div className="flex gap-1">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          disabled={isOverlay || index === 0}
+          onClick={onMoveUp}
+        >
+          <ArrowUp />
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          disabled={isOverlay || index === total - 1}
+          onClick={onMoveDown}
+        >
+          <ArrowDown />
+        </Button>
+      </div>
     </div>
   );
 }

@@ -219,7 +219,8 @@ pub async fn write_instance_launch_cfg(
                 true,
             );
         }
-        write_ephemeral_openmw_cfg(&data_dir, &resolved)
+        let settings = crate::instance_settings::load_instance_settings(&data_dir)?;
+        write_ephemeral_openmw_cfg(&data_dir, &resolved, &settings.openmw_cfg_overrides)
     })
     .await
     .map_err(|error| format!("Launch cfg task failed: {error}"))?

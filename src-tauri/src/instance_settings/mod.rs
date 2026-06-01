@@ -1,6 +1,7 @@
 pub mod commands;
 mod defaults;
-pub mod openmw_settings;
+pub mod openmw_cfg_overrides;
+mod openmw_settings;
 mod storage;
 mod tes3mp_lua;
 mod types;
@@ -14,6 +15,7 @@ pub use storage::{
     instance_settings_path, launch_settings_overlay_path, load_instance_settings,
     persist_settings_from_manifest, save_instance_settings, write_launch_settings_overlay,
 };
+pub use openmw_cfg_overrides::apply_openmw_cfg_override_lines;
 pub use openmw_settings::{format_settings_overlay, merge_settings_overlay};
 pub use types::{
     InstanceSettings, SettingCategory, SettingDefinition, SettingValue, SettingValueType,

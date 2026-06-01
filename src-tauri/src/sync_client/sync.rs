@@ -205,7 +205,11 @@ fn finalize_after_sync(
     let load_order = load_load_order(data_dir)?;
     let resolved: ResolvedOpenMwConfig =
         resolve_synced_load_order(data_dir, &load_order, manifest)?;
-    write_instance_launch_cfg(data_dir, &resolved)?;
+    write_instance_launch_cfg(
+        data_dir,
+        &resolved,
+        &manifest.instance_settings.openmw_cfg_overrides,
+    )?;
     write_synced_client_connection(instance, manifest)?;
     crate::instance_settings::persist_settings_from_manifest(data_dir, &manifest.instance_settings)?;
     Ok(())

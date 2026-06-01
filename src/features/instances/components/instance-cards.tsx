@@ -18,6 +18,7 @@ import {
   Plus,
   Server,
   Settings,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { InstanceConfig } from "@/types";
@@ -243,6 +244,35 @@ export function DashboardOwnedInstancesCard() {
   );
 }
 
+export function DashboardUpdateAvailableCard({
+  version,
+}: {
+  version?: string;
+}) {
+  return (
+    <Link href="/update-available" className="block h-full w-full my-4">
+      <Card
+        className={cn(
+          " relative w-full cursor-pointer overflow-hidden py-0 shadow-none ring-1 ring-accent",
+          "max-h-18 min-h-18 flex flex-row items-center justify-center animate-pulse border-accent border-2",
+        )}
+      >
+        <CardContent className="relative z-10 flex flex-row items-center gap-4 py-10 ">
+          <div
+            className={
+              " flex size-10 items-center justify-center rounded-xl border-2 border-accent"
+            }
+          >
+            <Sparkles className="size-5 stroke-[2.5] text-emerald-500" />
+          </div>
+          <span className={cn(dashboardGoldLabelClass, "text-lg font-bold ")}>
+            {version ? `Update to v${version}` : "Update Available!"}
+          </span>
+        </CardContent>
+      </Card>
+    </Link>
+  );
+}
 export function DashboardSyncedInstancesCard() {
   return (
     <DashboardGoldCard

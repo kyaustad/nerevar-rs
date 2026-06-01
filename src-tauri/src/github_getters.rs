@@ -6,19 +6,31 @@ use std::path::Path;
 use tauri_plugin_log::log::{error, info};
 
 pub async fn get_all_releases() -> Result<Vec<GithubReleaseResponse>, String> {
-    info!("Attempting to fetch all Tes3MP releases from Github...");
+    fetch_github_releases("tes3mp/tes3mp", "Tes3MP").await
+}
+
+pub async fn get_nerevar_releases() -> Result<Vec<GithubReleaseResponse>, String> {
+    fetch_github_releases(crate::app_update::NEREVAR_REPO, "Nerevar").await
+}
+
+async fn fetch_github_releases(
+    repo: &str,
+    label: &str,
+) -> Result<Vec<GithubReleaseResponse>, String> {
+    info!("Attempting to fetch all {label} releases from GitHub...");
     let client = Client::new();
-    let url = "https://api.github.com/repos/tes3mp/tes3mp/releases";
+    let url = format!("https://api.github.com/repos/{repo}/releases");
+    let user_agent = format!("Nerevar-{}", env!("CARGO_PKG_VERSION"));
 
     let response = match client
         .get(url)
-        .header("User-Agent", "Nerevar-0.1.0")
+        .header("User-Agent", user_agent)
         .send()
         .await
     {
         Ok(res) => res,
         Err(e) => {
-            error!("get_all_releases request failed: {e}");
+            error!("fetch_github_releases request failed: {e}");
             return Err(e.to_string());
         }
     };
@@ -26,18 +38,18 @@ pub async fn get_all_releases() -> Result<Vec<GithubReleaseResponse>, String> {
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        error!("get_all_releases HTTP {status}: {body}");
-        return Err(format!("Github API returnedHTTP {status}: {body}"));
+        error!("fetch_github_releases HTTP {status}: {body}");
+        return Err(format!("GitHub API returned HTTP {status}: {body}"));
     }
 
     match response.json::<Vec<GithubReleaseResponse>>().await {
         Ok(releases) => {
-            info!("Successfully fetched all Tes3MP releases from Github");
+            info!("Successfully fetched all {label} releases from GitHub");
             Ok(releases)
         }
         Err(e) => {
-            error!("get_all_releases JSON parsing failed: {e}");
-            return Err(e.to_string());
+            error!("fetch_github_releases JSON parsing failed: {e}");
+            Err(e.to_string())
         }
     }
 }
@@ -70,7 +82,10 @@ pub async fn download_and_extract_release_zip_by_id_to_path(
     let client = Client::new();
     let bytes = client
         .get(&zip_asset.browser_download_url)
-        .header("User-Agent", "Nerevar-0.1.0")
+        .header(
+            "User-Agent",
+            format!("Nerevar-{}", env!("CARGO_PKG_VERSION")),
+        )
         .send()
         .await
         .map_err(|e| e.to_string())?

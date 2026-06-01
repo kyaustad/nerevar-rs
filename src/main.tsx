@@ -9,6 +9,7 @@ import { initParticlesEngine } from "./lib/particles-init";
 import { initTheme } from "./lib/theme";
 import { Toaster } from "@/components/ui/sonner";
 import { ConfigContextProvider } from "@/features/config/context/config-context-provider";
+import { UpdateContextProvider } from "@/features/updates/context/update-context-provider";
 import { PortConflictProvider } from "@/features/port-conflicts/port-conflict-provider";
 import { OnboardingManager } from "./features/onboarding/components/manager";
 import { invoke } from "@tauri-apps/api/core";
@@ -19,6 +20,7 @@ initTheme();
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <ConfigContextProvider>
+      <UpdateContextProvider>
       <PortConflictProvider>
         <AppShell>
         <ParticlesProvider init={initParticlesEngine}>
@@ -34,6 +36,7 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
         </ParticlesProvider>
         </AppShell>
       </PortConflictProvider>
+      </UpdateContextProvider>
     </ConfigContextProvider>
   </React.StrictMode>,
 );

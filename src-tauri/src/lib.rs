@@ -1,4 +1,5 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+mod app_update;
 mod config;
 mod connection;
 mod data;
@@ -44,6 +45,24 @@ async fn get_all_releases() -> Result<Vec<GithubReleaseResponse>, String> {
     github_getters::get_all_releases()
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_app_version() -> String {
+    app_update::current_app_version()
+}
+
+#[tauri::command]
+async fn check_for_app_update() -> Result<app_update::AppUpdateStatus, String> {
+    app_update::check_for_update().await
+}
+
+#[tauri::command]
+async fn download_and_run_nerevar_update(
+    app: tauri::AppHandle,
+    release_id: u64,
+) -> Result<(), String> {
+    app_update::download_and_run_installer(release_id, app).await
 }
 
 #[tauri::command]
@@ -358,6 +377,9 @@ pub fn run() {
         // REGISTER COMMANDS HERE
         .invoke_handler(tauri::generate_handler![
             get_all_releases,
+            get_app_version,
+            check_for_app_update,
+            download_and_run_nerevar_update,
             load_or_create_nerevar_config,
             complete_onboarding,
             open_directory_picker,

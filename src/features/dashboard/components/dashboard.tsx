@@ -3,11 +3,20 @@ import {
   DashboardSettingsCard,
   DashboardSyncedInstancesCard,
   DashboardMO2Card,
+  DashboardUpdateAvailableCard,
 } from "@/features/instances/components/instance-cards";
+import { useAppUpdate } from "@/features/updates/context/update-context-provider";
 
 export function Dashboard() {
+  const update = useAppUpdate();
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+      {update.status?.updateAvailable ? (
+        <DashboardUpdateAvailableCard
+          version={update.status.latestRelease?.version}
+        />
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-2">
         <DashboardSyncedInstancesCard />
         <DashboardOwnedInstancesCard />
@@ -15,7 +24,7 @@ export function Dashboard() {
       <div className="grid gap-4 sm:grid-cols-2 ">
         <div className="flex flex-col items-center  rounded-xl bg-card/50 p-4">
           <p className="text-base  tracking-wide text-foreground">
-            {`Synced Instances are instances that you have synced by connecting to another Nerevar server. They are saved configurations to easily re-connect to that server and do not expose all the configuration and options as an owned instance, however they can be converted to an owned instance.`}
+            {`Synced Instances are instances that you have synced by connecting to another Nerevar server. They are saved configurations to easily re-connect to that server and do not expose all the configuration and options as an owned instance.`}
           </p>
         </div>
         <div className="flex flex-col items-center  rounded-xl bg-card/50 p-4">

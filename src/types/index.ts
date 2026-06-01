@@ -1,3 +1,5 @@
+export * from "./AppUpdateRelease";
+export * from "./AppUpdateStatus";
 export * from "./BackgroundOperationPhase";
 export * from "./BackgroundOperationProgressEvent";
 export * from "./GithubReleaseResponse";

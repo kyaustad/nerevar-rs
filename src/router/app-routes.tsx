@@ -11,6 +11,7 @@ import { NewInstancePage } from "@/features/instances/pages/new-owned-instance";
 import { NewConnectionPage } from "@/features/instances/pages/new-connection";
 import { Mo2PluginPage } from "@/features/mo2/pages/mo2-plugin-page";
 import { NerevarSettingsPage } from "@/features/settings/pages/nerevar-settings-page";
+import { UpdateAvailablePage } from "@/features/updates/pages/update-available-page";
 import { Dashboard } from "@/features/dashboard/components/dashboard";
 import { useEffect, useState } from "react";
 
@@ -67,6 +68,7 @@ export function AppRoutes() {
           <Route path="/new-connection" component={NewConnectionPage} />
           <Route path="/mo2" component={Mo2PluginPage} />
           <Route path="/settings" component={NerevarSettingsPage} />
+          <Route path="/update-available" component={UpdateAvailablePage} />
           <Route path="/instances/:id/data" component={InstanceDataManagerPage} />
           <Route
             path="/instances/:id/server-settings"

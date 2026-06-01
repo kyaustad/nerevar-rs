@@ -55,6 +55,7 @@ mod bindings {
         InstanceSettings, SettingCategory, SettingDefinition, SettingValue, SettingValueType,
         Tes3mpGameSettingEntry,
     };
+    use crate::app_update::{AppUpdateRelease, AppUpdateStatus};
     use ts_rs::{Config, TS};
 
     /// Run with `cargo test export_bindings` to refresh `src/types/*.ts`.
@@ -86,5 +87,7 @@ mod bindings {
         SettingValueType::export(&cfg).expect("export SettingValueType");
         SettingCategory::export(&cfg).expect("export SettingCategory");
         Tes3mpGameSettingEntry::export_all(&cfg).expect("export Tes3mpGameSettingEntry");
+        AppUpdateStatus::export_all(&cfg).expect("export AppUpdateStatus");
+        AppUpdateRelease::export_all(&cfg).expect("export AppUpdateRelease");
     }
 }

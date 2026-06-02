@@ -7,7 +7,7 @@ use crate::data::{InstanceConfig, NerevarConfig};
 use crate::instance_data::{find_instance_by_id, resolve_package_data_dir};
 use crate::process_manager::{ProcessManager, ProcessRole};
 use crate::sync_client::SyncCoordinator;
-use crate::sync_host::SharedSyncHost;
+use crate::sync_host::{SharedHostingManifestCache, SharedSyncHost};
 use crate::AppState;
 
 fn instance_is_running(
@@ -26,6 +26,7 @@ fn instance_is_running(
 fn clear_hosting_if_needed(
     app: &AppHandle,
     sync_host: &SharedSyncHost,
+    manifest_cache: &SharedHostingManifestCache,
     instance_id: &str,
 ) -> Result<(), String> {
     let mut host = sync_host
@@ -40,6 +41,12 @@ fn clear_hosting_if_needed(
         host.hosting_instance_id = None;
         host.hosting_data_dir = None;
         host.hosting_instance_root = None;
+        host.hosting_sync_password = None;
+
+        if let Ok(mut cache) = manifest_cache.write() {
+            cache.clear();
+        }
+
         let _ = app.emit("hosting-changed", ());
     }
 
@@ -103,6 +110,7 @@ pub fn delete_instance(
     app: AppHandle,
     state: State<'_, Mutex<AppState>>,
     sync_host: State<'_, SharedSyncHost>,
+    manifest_cache: State<'_, SharedHostingManifestCache>,
     process_manager: State<'_, Arc<ProcessManager>>,
     coordinator: State<'_, Arc<SyncCoordinator>>,
     instance_id: String,
@@ -123,7 +131,7 @@ pub fn delete_instance(
     }
 
     let _ = coordinator.cancel(&instance_id);
-    clear_hosting_if_needed(&app, sync_host.inner(), &instance_id)?;
+    clear_hosting_if_needed(&app, sync_host.inner(), manifest_cache.inner(), &instance_id)?;
 
     if delete_data_directory {
         delete_instance_files(&instance)?;

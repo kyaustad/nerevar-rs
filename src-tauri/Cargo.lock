@@ -2764,7 +2764,7 @@ dependencies = [
 
 [[package]]
 name = "nerevar"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "axum",
  "chrono",
@@ -2787,6 +2787,7 @@ dependencies = [
  "tauri-plugin-log",
  "tauri-plugin-opener",
  "tokio",
+ "tokio-util",
  "ts-rs",
  "urlencoding",
  "uuid",

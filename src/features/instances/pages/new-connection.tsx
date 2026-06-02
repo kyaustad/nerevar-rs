@@ -305,10 +305,14 @@ export function NewConnectionPage() {
               </div>
             ) : null}
 
-            {(sync.syncing || sync.progress) && syncInstanceId ? (
+            {syncInstanceId &&
+            (sync.syncing ||
+              sync.progress ||
+              sync.resumeStatus?.canResume) ? (
               <SyncProgressPanel
                 progress={sync.progress}
                 syncing={sync.syncing}
+                resumeStatus={sync.resumeStatus}
                 onCancel={() => void sync.cancelSync()}
               />
             ) : null}

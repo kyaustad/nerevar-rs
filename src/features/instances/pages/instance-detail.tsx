@@ -434,6 +434,7 @@ function SyncedInstanceSyncPanel({
     <SyncProgressPanel
       progress={sync.progress}
       syncing={active}
+      resumeStatus={sync.resumeStatus}
       onCancel={active ? () => void sync.cancelSync() : undefined}
     />
   );
@@ -476,7 +477,7 @@ function SyncedInstanceDetail({ instance }: { instance: InstanceConfig }) {
             ) : (
               <Network data-icon="inline-start" />
             )}
-            Sync from host
+            {sync.resumeStatus?.canResume ? "Resume sync" : "Sync from host"}
           </Button>
           <Button
             variant="secondary"

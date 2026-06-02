@@ -1,4 +1,8 @@
-import type { ManifestValidationResult, SyncProgressEvent } from "@/types";
+import type {
+  InstanceSyncStatus,
+  ManifestValidationResult,
+  SyncProgressEvent,
+} from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
@@ -13,19 +17,45 @@ const TERMINAL_SYNC_PHASES = new Set<SyncProgressEvent["phase"]>([
 export function useInstanceSync(instanceId: string) {
   const [progress, setProgress] = useState<SyncProgressEvent | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [resumeStatus, setResumeStatus] = useState<InstanceSyncStatus | null>(
+    null,
+  );
   const [lastValidation, setLastValidation] =
     useState<ManifestValidationResult | null>(null);
+
+  const refreshResumeStatus = useCallback(async () => {
+    if (!instanceId) {
+      setResumeStatus(null);
+      return;
+    }
+    try {
+      const status = await invoke<InstanceSyncStatus>(
+        "get_instance_sync_status",
+        { instanceId },
+      );
+      setResumeStatus(status);
+    } catch {
+      setResumeStatus(null);
+    }
+  }, [instanceId]);
+
+  useEffect(() => {
+    void refreshResumeStatus();
+  }, [refreshResumeStatus]);
 
   useEffect(() => {
     const unlisten = listen<SyncProgressEvent>("sync-progress", (event) => {
       if (event.payload.instanceId !== instanceId) return;
       setProgress(event.payload);
       setSyncing(!TERMINAL_SYNC_PHASES.has(event.payload.phase));
+      if (TERMINAL_SYNC_PHASES.has(event.payload.phase)) {
+        void refreshResumeStatus();
+      }
     });
     return () => {
       void unlisten.then((fn) => fn());
     };
-  }, [instanceId]);
+  }, [instanceId, refreshResumeStatus]);
 
   const startSync = useCallback(async (overrideInstanceId?: string) => {
     const targetId = overrideInstanceId ?? instanceId;
@@ -53,16 +83,19 @@ export function useInstanceSync(instanceId: string) {
       const message = String(error);
       if (!message.toLowerCase().includes("cancelled")) {
         toast.error(`Sync failed: ${error}`);
+      } else {
+        toast.info("Sync paused — run Sync again to resume");
       }
       setSyncing(false);
+      void refreshResumeStatus();
       throw error;
     }
-  }, [instanceId]);
+  }, [instanceId, refreshResumeStatus]);
 
   const cancelSync = useCallback(async () => {
     try {
       await invoke<boolean>("cancel_instance_sync", { instanceId });
-      toast.info("Sync cancellation requested");
+      toast.info("Stopping sync — progress will be saved");
     } catch (error) {
       toast.error(`Failed to cancel sync: ${error}`);
     }
@@ -71,7 +104,9 @@ export function useInstanceSync(instanceId: string) {
   return {
     progress,
     syncing,
+    resumeStatus,
     lastValidation,
+    refreshResumeStatus,
     startSync,
     cancelSync,
   };

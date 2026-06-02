@@ -34,6 +34,7 @@ export * from "./RemoteManifestSummary";
 export * from "./RemotePackageSummary";
 export * from "./SyncPhase";
 export * from "./SyncProgressEvent";
+export * from "./InstanceSyncStatus";
 export * from "./ProcessStream";
 export * from "./ProcessOutputEvent";
 export * from "./ProcessStatusEvent";

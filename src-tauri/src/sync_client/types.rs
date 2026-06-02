@@ -1,11 +1,12 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum SyncPhase {
     CheckingUpdates,
+    VerifyingExisting,
     FetchingManifest,
     Downloading,
     ApplyingLoadOrder,
@@ -25,8 +26,29 @@ pub struct SyncProgressEvent {
     pub message: String,
     pub bytes_done: u64,
     pub bytes_total: u64,
+    #[serde(default)]
+    pub files_done: u64,
+    #[serde(default)]
+    pub files_total: u64,
+    #[serde(default)]
+    pub overall_percent: u8,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_file: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct InstanceSyncStatus {
+    pub has_manifest: bool,
+    pub can_resume: bool,
+    pub is_complete: bool,
+    pub bytes_verified: u64,
+    pub bytes_total: u64,
+    pub files_verified: u32,
+    pub files_total: u32,
+    #[serde(default)]
+    pub percent_complete: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

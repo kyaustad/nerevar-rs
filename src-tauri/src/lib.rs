@@ -23,7 +23,7 @@ use crate::data::NewInstanceConfig;
 use crate::port_conflict::PortConflict;
 use crate::process_manager::ProcessManager;
 use crate::sync_client::SyncCoordinator;
-use crate::sync_host::new_shared_sync_host;
+use crate::sync_host::{new_shared_hosting_manifest_cache, new_shared_sync_host};
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, RunEvent};
 use tauri::State;
@@ -212,11 +212,14 @@ pub fn run() {
                 .server_enabled_tx = Some(enabled_tx);
 
             let sync_host = new_shared_sync_host();
+            let manifest_cache = new_shared_hosting_manifest_cache();
             app.manage(sync_host.clone());
+            app.manage(manifest_cache.clone());
             app.manage(Arc::new(SyncCoordinator::new()));
             app.manage(Arc::new(ProcessManager::new()));
 
-            let server_ctx = nerevar_server::state::ServerContext::new(sync_host);
+            let server_ctx =
+                nerevar_server::state::ServerContext::new(sync_host, manifest_cache);
             let app_handle = app.handle().clone();
             let startup_config = app
                 .state::<Mutex<AppState>>()
@@ -409,6 +412,7 @@ pub fn run() {
             connection::commands::fetch_remote_manifest_summary,
             connection::commands::add_synced_connection,
             connection::commands::sync_instance_from_remote,
+            sync_client::sync::get_instance_sync_status,
             connection::commands::cancel_instance_sync,
             connection::commands::launch_instance_client,
             connection::commands::launch_instance_server,

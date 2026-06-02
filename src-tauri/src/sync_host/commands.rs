@@ -8,6 +8,8 @@ use crate::instance_data::{
     find_instance_by_id, load_manifest, manifest_path, resolve_package_data_dir,
     NerevarManifest,
 };
+use crate::instance_setup::{instance_tes3mp_dir, read_tes3mp_server_settings};
+use crate::sync_host::SharedHostingManifestCache;
 use crate::sync_client::ping_nerevar_server;
 use crate::AppState;
 
@@ -79,6 +81,7 @@ pub fn activate_hosting_instance(
     app: AppHandle,
     state: State<'_, Mutex<AppState>>,
     sync_host: State<'_, SharedSyncHost>,
+    manifest_cache: State<'_, SharedHostingManifestCache>,
     instance_id: String,
 ) -> Result<NerevarManifest, String> {
     let instance = {
@@ -96,12 +99,23 @@ pub fn activate_hosting_instance(
         )
     })?;
 
+    let instance_root = Path::new(&instance.path).to_path_buf();
+    let tes3mp_dir = instance_tes3mp_dir(&instance_root);
+    let sync_password = read_tes3mp_server_settings(&tes3mp_dir)
+        .map(|settings| settings.password)
+        .unwrap_or_default();
+
     let mut host = sync_host
         .lock()
         .map_err(|_| "Sync host lock poisoned".to_string())?;
     host.hosting_instance_id = Some(instance_id);
     host.hosting_data_dir = Some(data_dir);
-    host.hosting_instance_root = Some(Path::new(&instance.path).to_path_buf());
+    host.hosting_instance_root = Some(instance_root);
+    host.hosting_sync_password = Some(sync_password);
+
+    if let Ok(mut cache) = manifest_cache.write() {
+        cache.clear();
+    }
 
     emit_hosting_changed(&app);
     Ok(manifest)
@@ -111,6 +125,7 @@ pub fn activate_hosting_instance(
 pub fn clear_hosting_instance(
     app: AppHandle,
     sync_host: State<'_, SharedSyncHost>,
+    manifest_cache: State<'_, SharedHostingManifestCache>,
 ) -> Result<(), String> {
     let mut host = sync_host
         .lock()
@@ -118,6 +133,12 @@ pub fn clear_hosting_instance(
     host.hosting_instance_id = None;
     host.hosting_data_dir = None;
     host.hosting_instance_root = None;
+    host.hosting_sync_password = None;
+
+    if let Ok(mut cache) = manifest_cache.write() {
+        cache.clear();
+    }
+
     emit_hosting_changed(&app);
     Ok(())
 }

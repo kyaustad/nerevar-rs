@@ -11,7 +11,8 @@ use crate::instance_data::{
     ManifestValidationResult, Mo2ModlistImportResult, NerevarManifest, ProgressEmitter,
     ResolvedOpenMwConfig,
 };
-use crate::sync_host::SharedSyncHost;
+use crate::instance_setup::{instance_tes3mp_dir, read_tes3mp_server_settings};
+use crate::sync_host::{SharedHostingManifestCache, SharedSyncHost};
 use crate::AppState;
 
 fn resolve_instance(
@@ -259,6 +260,7 @@ pub async fn save_and_host_instance(
     app: AppHandle,
     state: State<'_, Mutex<AppState>>,
     sync_host: State<'_, SharedSyncHost>,
+    manifest_cache: State<'_, SharedHostingManifestCache>,
     instance_id: String,
     load_order: LoadOrder,
     operation_id: Option<String>,
@@ -293,12 +295,21 @@ pub async fn save_and_host_instance(
     .await
     .map_err(|error| format!("Host task failed: {error}"))??;
 
+    let sync_password = read_tes3mp_server_settings(&instance_tes3mp_dir(&instance_root_for_host))
+        .map(|settings| settings.password)
+        .unwrap_or_default();
+
     let mut host = sync_host
         .lock()
         .map_err(|_| "Sync host lock poisoned".to_string())?;
     host.hosting_instance_id = Some(instance_id);
     host.hosting_data_dir = Some(data_dir_for_host);
     host.hosting_instance_root = Some(instance_root_for_host);
+    host.hosting_sync_password = Some(sync_password);
+
+    if let Ok(mut cache) = manifest_cache.write() {
+        cache.clear();
+    }
 
     let _ = app_for_host.emit("hosting-changed", ());
     Ok(manifest)
@@ -309,6 +320,7 @@ pub async fn set_hosting_instance(
     app: AppHandle,
     state: State<'_, Mutex<AppState>>,
     sync_host: State<'_, SharedSyncHost>,
+    manifest_cache: State<'_, SharedHostingManifestCache>,
     instance_id: String,
     operation_id: Option<String>,
 ) -> Result<NerevarManifest, String> {
@@ -332,12 +344,21 @@ pub async fn set_hosting_instance(
     .await
     .map_err(|error| format!("Host task failed: {error}"))??;
 
+    let sync_password = read_tes3mp_server_settings(&instance_tes3mp_dir(&instance_root_for_host))
+        .map(|settings| settings.password)
+        .unwrap_or_default();
+
     let mut host = sync_host
         .lock()
         .map_err(|_| "Sync host lock poisoned".to_string())?;
     host.hosting_instance_id = Some(instance_id);
     host.hosting_data_dir = Some(data_dir_for_host);
     host.hosting_instance_root = Some(instance_root_for_host);
+    host.hosting_sync_password = Some(sync_password);
+
+    if let Ok(mut cache) = manifest_cache.write() {
+        cache.clear();
+    }
 
     let _ = app_for_host.emit("hosting-changed", ());
     Ok(manifest)

@@ -1,17 +1,21 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use axum::body::Body;
 use axum::extract::{Path as AxumPath, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Serialize;
+use tokio::fs::File;
+use tokio_util::io::ReaderStream;
 
 use crate::instance_data::{load_manifest, manifest_path};
 use crate::instance_setup::{instance_tes3mp_dir, read_tes3mp_server_settings};
 use crate::nerevar_server::state::ServerContext;
 use crate::sync_auth::{sync_password_matches, SYNC_PASSWORD_HEADER};
+use crate::sync_host::get_package_file_path;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -69,30 +73,38 @@ fn verify_sync_password(
     state: &ServerContext,
     headers: &HeaderMap,
 ) -> Result<(), (StatusCode, String)> {
-    let instance_root = {
+    let expected = {
         let host = state
             .sync_host
             .lock()
             .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Lock poisoned".to_string()))?;
-        host.hosting_instance_root.clone().ok_or((
-            StatusCode::SERVICE_UNAVAILABLE,
-            "No instance is hosting sync".to_string(),
-        ))?
-    };
 
-    let tes3mp_dir = instance_tes3mp_dir(&instance_root);
-    let settings = read_tes3mp_server_settings(&tes3mp_dir).map_err(|error| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to read TES3MP server password: {error}"),
-        )
-    })?;
+        if let Some(password) = host.hosting_sync_password.as_ref() {
+            password.clone()
+        } else {
+            let instance_root = host.hosting_instance_root.clone().ok_or((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "No instance is hosting sync".to_string(),
+            ))?;
+            drop(host);
+
+            let tes3mp_dir = instance_tes3mp_dir(&instance_root);
+            read_tes3mp_server_settings(&tes3mp_dir)
+                .map_err(|error| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Failed to read TES3MP server password: {error}"),
+                    )
+                })?
+                .password
+        }
+    };
 
     let provided = headers
         .get(SYNC_PASSWORD_HEADER)
         .and_then(|value| value.to_str().ok());
 
-    if sync_password_matches(&settings.password, provided) {
+    if sync_password_matches(&expected, provided) {
         Ok(())
     } else {
         Err((
@@ -103,26 +115,34 @@ fn verify_sync_password(
 }
 
 fn password_required(state: &ServerContext) -> Result<bool, (StatusCode, String)> {
-    let instance_root = {
+    let expected = {
         let host = state
             .sync_host
             .lock()
             .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Lock poisoned".to_string()))?;
-        host.hosting_instance_root.clone().ok_or((
-            StatusCode::SERVICE_UNAVAILABLE,
-            "No instance is hosting sync".to_string(),
-        ))?
+
+        if let Some(password) = host.hosting_sync_password.as_ref() {
+            password.clone()
+        } else {
+            let instance_root = host.hosting_instance_root.clone().ok_or((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "No instance is hosting sync".to_string(),
+            ))?;
+            drop(host);
+
+            let tes3mp_dir = instance_tes3mp_dir(&instance_root);
+            read_tes3mp_server_settings(&tes3mp_dir)
+                .map_err(|error| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Failed to read TES3MP server password: {error}"),
+                    )
+                })?
+                .password
+        }
     };
 
-    let tes3mp_dir = instance_tes3mp_dir(&instance_root);
-    let settings = read_tes3mp_server_settings(&tes3mp_dir).map_err(|error| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to read TES3MP server password: {error}"),
-        )
-    })?;
-
-    Ok(crate::sync_auth::sync_password_required(&settings.password))
+    Ok(crate::sync_auth::sync_password_required(&expected))
 }
 
 async fn root_manifest_summary(
@@ -194,27 +214,24 @@ async fn serve_package_file(
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     verify_sync_password(&state, &headers)?;
     let data_dir = hosting_data_dir(&state).await?;
-    let manifest = load_manifest(&data_dir).map_err(|e| (StatusCode::NOT_FOUND, e))?;
-
-    let package = manifest
-        .packages
-        .iter()
-        .find(|p| p.id == package_id)
-        .ok_or((StatusCode::NOT_FOUND, "Package not found".to_string()))?;
 
     let relative = file_path.replace('\\', "/");
     if relative.contains("..") {
         return Err((StatusCode::BAD_REQUEST, "Invalid file path".to_string()));
     }
 
-    let allowed = package.files.iter().any(|f| f.path == relative);
-    if !allowed {
-        return Err((StatusCode::NOT_FOUND, "File not in manifest".to_string()));
-    }
+    let resolved = get_package_file_path(&state.manifest_cache, &data_dir, &package_id, &relative)
+        .map_err(|e| (StatusCode::NOT_FOUND, e))?;
 
-    let full_path = Path::new(&data_dir).join(&package.relative_dir).join(&relative);
-    let bytes = std::fs::read(&full_path)
+    let Some((data_root, relative_path)) = resolved else {
+        return Err((StatusCode::NOT_FOUND, "File not in manifest".to_string()));
+    };
+
+    let full_path = Path::new(&data_root).join(relative_path);
+    let file = File::open(&full_path)
+        .await
         .map_err(|e| (StatusCode::NOT_FOUND, format!("Failed to read file: {e}")))?;
 
-    Ok(bytes)
+    let stream = ReaderStream::new(file);
+    Ok(Body::from_stream(stream))
 }

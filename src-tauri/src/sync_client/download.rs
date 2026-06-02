@@ -11,6 +11,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::task::JoinSet;
 
 use crate::instance_data::{package_abs_path, ManifestFileEntry, NerevarManifest};
+use crate::sync_paths::normalize_manifest_file_path;
 use crate::sync_auth::SYNC_PASSWORD_HEADER;
 
 use super::sync_state::{
@@ -173,11 +174,19 @@ fn collect_download_jobs(
 
             let _ = std::fs::remove_file(part_path(&dest));
 
+            let normalized_path = normalize_manifest_file_path(&file_entry.path)
+                .map_err(|reason| {
+                    format!(
+                        "Invalid manifest path for {} / {}: {reason}",
+                        package.id, file_entry.path
+                    )
+                })?;
+
             let url = format!(
                 "{}/packages/{}/files/{}",
                 base,
                 urlencoding::encode(&package.id),
-                encode_path_segments(&file_entry.path)
+                encode_path_segments(&normalized_path)
             );
 
             jobs.push(DownloadJob {
@@ -218,10 +227,16 @@ async fn download_one_file(
     }
 
     if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        let detail = if body.is_empty() {
+            String::new()
+        } else {
+            format!(" — {body}")
+        };
         return Err(format!(
-            "Failed to download {} (HTTP {})",
+            "Failed to download {} (HTTP {status}){detail}",
             job.file_entry.path,
-            response.status()
         ));
     }
 

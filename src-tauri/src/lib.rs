@@ -16,6 +16,7 @@ mod process_manager;
 mod sync_auth;
 mod sync_client;
 mod sync_host;
+mod sync_paths;
 
 use crate::data::GithubReleaseResponse;
 use crate::data::NerevarConfig;

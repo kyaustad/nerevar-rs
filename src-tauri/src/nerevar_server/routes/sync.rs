@@ -16,6 +16,7 @@ use crate::instance_setup::{instance_tes3mp_dir, read_tes3mp_server_settings};
 use crate::nerevar_server::state::ServerContext;
 use crate::sync_auth::{sync_password_matches, SYNC_PASSWORD_HEADER};
 use crate::sync_host::get_package_file_path;
+use crate::sync_paths::normalize_manifest_file_path;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -215,10 +216,12 @@ async fn serve_package_file(
     verify_sync_password(&state, &headers)?;
     let data_dir = hosting_data_dir(&state).await?;
 
-    let relative = file_path.replace('\\', "/");
-    if relative.contains("..") {
-        return Err((StatusCode::BAD_REQUEST, "Invalid file path".to_string()));
-    }
+    let relative = normalize_manifest_file_path(&file_path).map_err(|reason| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("Invalid file path for package {package_id}: {reason}"),
+        )
+    })?;
 
     let resolved = get_package_file_path(&state.manifest_cache, &data_dir, &package_id, &relative)
         .map_err(|e| (StatusCode::NOT_FOUND, e))?;

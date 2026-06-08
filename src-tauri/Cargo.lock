@@ -2764,7 +2764,7 @@ dependencies = [
 
 [[package]]
 name = "nerevar"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "axum",
  "chrono",

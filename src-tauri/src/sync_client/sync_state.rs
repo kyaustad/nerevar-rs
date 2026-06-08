@@ -2,8 +2,10 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -44,10 +46,35 @@ impl SyncStateFile {
     }
 
     fn is_verified(&self, package_id: &str, entry: &ManifestFileEntry) -> bool {
-        self.completed
-            .get(&file_key(package_id, &entry.path))
-            .is_some_and(|checksum| checksum == &entry.checksum)
+        is_verified_in(&self.completed, package_id, entry)
     }
+}
+
+pub fn is_verified_in(
+    completed: &HashMap<String, String>,
+    package_id: &str,
+    entry: &ManifestFileEntry,
+) -> bool {
+    completed
+        .get(&file_key(package_id, &entry.path))
+        .is_some_and(|checksum| checksum == &entry.checksum)
+}
+
+pub fn count_verified_in_manifest(
+    manifest: &NerevarManifest,
+    completed: &HashMap<String, String>,
+) -> (u64, u64) {
+    let mut bytes = 0u64;
+    let mut files = 0u64;
+    for package in &manifest.packages {
+        for file in &package.files {
+            if is_verified_in(completed, &package.id, file) {
+                bytes = bytes.saturating_add(file.size);
+                files += 1;
+            }
+        }
+    }
+    (bytes, files)
 }
 
 pub fn load_sync_state(data_dir: &Path, manifest: &NerevarManifest) -> Result<SyncStateFile, String> {
@@ -128,6 +155,13 @@ impl SharedSyncState {
         guard.is_verified(package_id, entry)
     }
 
+    pub fn completed_snapshot(&self) -> HashMap<String, String> {
+        self.inner
+            .lock()
+            .map(|guard| guard.completed.clone())
+            .unwrap_or_default()
+    }
+
     pub fn mark_verified(
         &self,
         package_id: &str,
@@ -160,6 +194,35 @@ impl SharedSyncState {
         }
 
         Ok(())
+    }
+
+    pub fn mark_verified_batch(
+        &self,
+        items: &[(String, ManifestFileEntry, String)],
+    ) -> Result<(), String> {
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        {
+            let mut guard = self
+                .inner
+                .lock()
+                .map_err(|_| "Sync state lock poisoned".to_string())?;
+            for (package_id, entry, checksum) in items {
+                guard
+                    .completed
+                    .insert(file_key(package_id, &entry.path), checksum.clone());
+            }
+        }
+
+        if let Ok(mut dirty) = self.dirty.lock() {
+            *dirty = true;
+        }
+        if let Ok(mut saves) = self.saves_since_flush.lock() {
+            *saves = 0;
+        }
+        self.flush()
     }
 
     pub fn flush(&self) -> Result<(), String> {
@@ -210,20 +273,48 @@ fn hex_encode(bytes: impl AsRef<[u8]>) -> String {
         .collect()
 }
 
-/// Files on disk from an older sync (size-only resume) that are not yet in sync-state.
+struct AdoptCandidate {
+    package_id: String,
+    entry: ManifestFileEntry,
+    path: PathBuf,
+}
+
+/// Progress: `(bytes_verified, bytes_total, files_verified, files_total, current_file)`.
+pub type AdoptProgressFn = Box<dyn Fn(u64, u64, u64, u64, Option<&str>) + Send + Sync>;
+
+/// Files on disk from an older sync that are not yet in sync-state.
 pub fn adopt_existing_files_into_state(
     data_dir: &Path,
     manifest: &NerevarManifest,
     state: &SharedSyncState,
     package_abs: fn(&Path, &str) -> PathBuf,
+    progress: Option<AdoptProgressFn>,
 ) -> Result<u64, String> {
-    let mut adopted = 0u64;
+    let completed = state.completed_snapshot();
+    let (bytes_already_verified, files_already_verified) =
+        count_verified_in_manifest(manifest, &completed);
+    let bytes_total = manifest.total_download_bytes.max(1);
+    let files_total = manifest
+        .packages
+        .iter()
+        .map(|package| package.files.len() as u64)
+        .sum();
 
+    if let Some(ref emit) = progress {
+        emit(
+            bytes_already_verified,
+            bytes_total,
+            files_already_verified,
+            files_total,
+            None,
+        );
+    }
+
+    let mut candidates = Vec::new();
     for package in &manifest.packages {
         let package_dir = package_abs(data_dir, &package.relative_dir);
         for entry in &package.files {
-            if state.is_verified(&package.id, entry) {
-                adopted = adopted.saturating_add(entry.size);
+            if is_verified_in(&completed, &package.id, entry) {
                 continue;
             }
 
@@ -235,16 +326,79 @@ pub fn adopt_existing_files_into_state(
                 continue;
             }
 
-            let checksum = hash_file_checksum(&dest)?;
-            if checksum == entry.checksum {
-                state.mark_verified(&package.id, entry, &checksum)?;
-                adopted = adopted.saturating_add(entry.size);
-            }
+            candidates.push(AdoptCandidate {
+                package_id: package.id.clone(),
+                entry: entry.clone(),
+                path: dest,
+            });
         }
     }
 
-    state.flush()?;
-    Ok(adopted)
+    if candidates.is_empty() {
+        return Ok(bytes_already_verified);
+    }
+
+    let bytes_newly_verified = Arc::new(AtomicU64::new(0));
+    let files_newly_verified = Arc::new(AtomicU64::new(0));
+    let candidates_total = candidates.len() as u64;
+    let progress_counter = Arc::new(AtomicU64::new(0));
+
+    let adopted_items: Vec<(String, ManifestFileEntry, String)> = candidates
+        .par_iter()
+        .map(|candidate| {
+            let checksum = hash_file_checksum(&candidate.path)?;
+            let processed = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
+
+            let adopted = if checksum == candidate.entry.checksum {
+                bytes_newly_verified.fetch_add(candidate.entry.size, Ordering::Relaxed);
+                files_newly_verified.fetch_add(1, Ordering::Relaxed);
+                Some((
+                    candidate.package_id.clone(),
+                    candidate.entry.clone(),
+                    checksum,
+                ))
+            } else {
+                None
+            };
+
+            if let Some(ref emit) = progress {
+                if processed == candidates_total || processed % 32 == 0 {
+                    let bytes_verified = bytes_already_verified
+                        + bytes_newly_verified.load(Ordering::Relaxed);
+                    let files_verified = files_already_verified
+                        + files_newly_verified.load(Ordering::Relaxed);
+                    emit(
+                        bytes_verified,
+                        bytes_total,
+                        files_verified,
+                        files_total,
+                        Some(candidate.entry.path.as_str()),
+                    );
+                }
+            }
+
+            Ok::<Option<(String, ManifestFileEntry, String)>, String>(adopted)
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+
+    state.mark_verified_batch(&adopted_items)?;
+
+    let bytes_verified = bytes_already_verified + bytes_newly_verified.load(Ordering::Relaxed);
+    let files_verified = files_already_verified + files_newly_verified.load(Ordering::Relaxed);
+    if let Some(ref emit) = progress {
+        emit(
+            bytes_verified,
+            bytes_total,
+            files_verified,
+            files_total,
+            None,
+        );
+    }
+
+    Ok(bytes_verified)
 }
 
 pub fn instance_sync_status_absent() -> InstanceSyncStatus {

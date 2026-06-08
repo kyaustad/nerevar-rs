@@ -15,7 +15,8 @@ use crate::sync_paths::normalize_manifest_file_path;
 use crate::sync_auth::SYNC_PASSWORD_HEADER;
 
 use super::sync_state::{
-    adopt_existing_files_into_state, clear_sync_state, hash_file_checksum, SharedSyncState,
+    adopt_existing_files_into_state, clear_sync_state, count_verified_in_manifest, is_verified_in,
+    SharedSyncState,
 };
 use super::progress::emit_sync_progress;
 use super::types::SyncPhase;
@@ -134,16 +135,16 @@ fn part_path(dest: &Path) -> PathBuf {
     ))
 }
 
-fn count_verified_bytes(manifest: &NerevarManifest, state: &SharedSyncState) -> u64 {
-    let mut bytes = 0u64;
-    for package in &manifest.packages {
-        for file in &package.files {
-            if state.is_verified(&package.id, file) {
-                bytes = bytes.saturating_add(file.size);
-            }
-        }
-    }
-    bytes
+fn count_verified_bytes(manifest: &NerevarManifest, completed: &std::collections::HashMap<String, String>) -> u64 {
+    count_verified_in_manifest(manifest, completed).0
+}
+
+fn manifest_file_count(manifest: &NerevarManifest) -> u64 {
+    manifest
+        .packages
+        .iter()
+        .map(|package| package.files.len() as u64)
+        .sum()
 }
 
 fn collect_download_jobs(
@@ -152,7 +153,7 @@ fn collect_download_jobs(
     host: &str,
     port: u16,
     force: bool,
-    state: &SharedSyncState,
+    completed: &std::collections::HashMap<String, String>,
 ) -> Result<Vec<DownloadJob>, String> {
     let base = base_url(host, port);
     let mut jobs = Vec::new();
@@ -163,7 +164,7 @@ fn collect_download_jobs(
             .map_err(|e| format!("Failed to create {}: {e}", package_dir.display()))?;
 
         for file_entry in &package.files {
-            if !force && state.is_verified(&package.id, file_entry) {
+            if !force && is_verified_in(completed, &package.id, file_entry) {
                 continue;
             }
 
@@ -318,49 +319,69 @@ pub async fn download_manifest_files(
     }
 
     let state = SharedSyncState::load(data_dir, manifest)?;
+    let manifest_files_total = manifest_file_count(manifest);
+    let bytes_total = manifest.total_download_bytes.max(1);
 
     if !force {
-        let verified = count_verified_bytes(manifest, &state);
-        let bytes_total = manifest.total_download_bytes.max(1);
+        let completed_before = state.completed_snapshot();
+        let (verified_bytes, verified_files) =
+            count_verified_in_manifest(manifest, &completed_before);
+        let progress_throttler = Arc::new(ProgressThrottler::new());
         emit_sync_progress(
             &app,
             instance_id,
             SyncPhase::VerifyingExisting,
-            "Verifying files already on disk (resume)",
-            verified,
+            format!(
+                "Verifying files already on disk ({} concurrent)",
+                rayon::current_num_threads()
+            ),
+            verified_bytes,
             bytes_total,
-            0,
-            0,
+            verified_files,
+            manifest_files_total,
             None,
         );
 
         let data_dir_owned = data_dir.to_path_buf();
         let manifest_owned = manifest.clone();
         let state_for_adopt = state.clone();
+        let app_for_adopt = app.clone();
+        let instance_for_adopt = instance_id.to_string();
+        let throttler_for_adopt = progress_throttler.clone();
         tauri::async_runtime::spawn_blocking(move || {
             adopt_existing_files_into_state(
                 &data_dir_owned,
                 &manifest_owned,
                 &state_for_adopt,
                 package_abs_path,
+                Some(Box::new(move |bytes_done, bytes_total, files_done, files_total, current| {
+                    maybe_emit_progress(
+                        &throttler_for_adopt,
+                        &app_for_adopt,
+                        &instance_for_adopt,
+                        SyncPhase::VerifyingExisting,
+                        format!("Verified {files_done}/{files_total} files on disk"),
+                        bytes_done,
+                        bytes_total,
+                        files_done,
+                        files_total,
+                        current.map(str::to_string),
+                        false,
+                    );
+                })),
             )
         })
         .await
         .map_err(|e| format!("Verify task failed: {e}"))??;
     }
 
-    let jobs = collect_download_jobs(data_dir, manifest, host, port, force, &state)?;
-    let skipped_bytes = count_verified_bytes(manifest, &state);
-    let bytes_total = manifest.total_download_bytes.max(1);
+    let completed = state.completed_snapshot();
+    let jobs = collect_download_jobs(data_dir, manifest, host, port, force, &completed)?;
+    let skipped_bytes = count_verified_bytes(manifest, &completed);
     let bytes_done = Arc::new(AtomicU64::new(skipped_bytes));
     let files_done = Arc::new(AtomicU64::new(0));
-    let manifest_file_count: u64 = manifest
-        .packages
-        .iter()
-        .map(|package| package.files.len() as u64)
-        .sum();
-    let files_remaining = jobs.len() as u64;
-    let files_already_verified = manifest_file_count.saturating_sub(files_remaining);
+    let (verified_files, _) = count_verified_in_manifest(manifest, &completed);
+    let files_already_verified = verified_files;
     emit_sync_progress(
         &app,
         instance_id,
@@ -383,7 +404,7 @@ pub async fn download_manifest_files(
         bytes_done.load(Ordering::Relaxed),
         bytes_total,
         files_already_verified,
-        manifest_file_count,
+        manifest_files_total,
         None,
     );
 
@@ -413,7 +434,7 @@ pub async fn download_manifest_files(
             cancel.clone(),
             bytes_done.clone(),
             files_done.clone(),
-            manifest_file_count,
+            manifest_files_total,
             bytes_total,
             progress_throttler.clone(),
         );
@@ -469,8 +490,8 @@ pub async fn download_manifest_files(
         "Download complete",
         bytes_done.load(Ordering::Relaxed),
         bytes_total,
-        manifest_file_count,
-        manifest_file_count,
+        manifest_files_total,
+        manifest_files_total,
         None,
     );
 
@@ -565,7 +586,7 @@ mod tests {
     use super::*;
     use crate::instance_data::{ManifestPackage, PackageKind, ResolvedOpenMwConfig};
     use crate::instance_settings::InstanceSettings;
-    use crate::sync_client::sync_state::load_sync_state;
+    use crate::sync_client::sync_state::{hash_file_checksum, load_sync_state};
     use std::fs;
 
     fn empty_manifest(packages: Vec<ManifestPackage>) -> NerevarManifest {
@@ -634,7 +655,8 @@ mod tests {
         crate::sync_client::sync_state::save_sync_state_file(&data_dir, &state_file).unwrap();
 
         let state = SharedSyncState::load(&data_dir, &manifest).unwrap();
-        let jobs = collect_download_jobs(&data_dir, &manifest, "127.0.0.1", 8080, false, &state).unwrap();
+        let completed = state.completed_snapshot();
+        let jobs = collect_download_jobs(&data_dir, &manifest, "127.0.0.1", 8080, false, &completed).unwrap();
         assert!(jobs.is_empty());
 
         let _ = fs::remove_dir_all(&data_dir);

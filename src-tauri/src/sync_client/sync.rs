@@ -276,18 +276,27 @@ async fn sync_if_needed_inner(
         return Err("Sync cancelled".to_string());
     }
 
-    emit_sync_progress(
-        &app,
-        instance_id,
-        SyncPhase::Validating,
-        "Verifying downloaded files",
-        0,
-        1,
-        0,
-        0,
-        None,
-    );
-    let validation = validate_manifest_against_disk(data_dir, &remote);
+    let post_download_state = load_sync_state(data_dir, &remote)?;
+    let validation = if sync_is_complete(&post_download_state, &remote) {
+        ManifestValidationResult {
+            valid: true,
+            issues: Vec::new(),
+        }
+    } else {
+        emit_sync_progress(
+            &app,
+            instance_id,
+            SyncPhase::Validating,
+            "Verifying downloaded files",
+            0,
+            1,
+            0,
+            0,
+            None,
+        );
+        validate_manifest_against_disk(data_dir, &remote)
+    };
+
     if !validation.valid {
         let message = format!("Validation failed ({} issues)", validation.issues.len());
         emit_sync_progress(

@@ -160,7 +160,7 @@ pub async fn delete_instance_package(
     instance_id: String,
     entry_id: String,
 ) -> Result<LoadOrder, String> {
-    let (instance, instance_root, data_dir) = resolve_instance_data_dir(&state, &instance_id)?;
+    let (instance, _, data_dir) = resolve_instance_data_dir(&state, &instance_id)?;
     delete_package(&instance, &data_dir, &entry_id)
 }
 
@@ -242,7 +242,7 @@ pub fn build_instance_manifest(
     state: State<'_, Mutex<AppState>>,
     instance_id: String,
 ) -> Result<NerevarManifest, String> {
-    let (instance, instance_root, data_dir) = resolve_instance_data_dir(&state, &instance_id)?;
+    let (instance, _, data_dir) = resolve_instance_data_dir(&state, &instance_id)?;
     let load_order = load_load_order(&data_dir)?;
     let mut no_progress = None;
     build_manifest(

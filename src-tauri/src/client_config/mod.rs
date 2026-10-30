@@ -400,6 +400,118 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// Installs the published TES3MP-NG v0.51.0, configures it with Nerevar's code from the
+    /// Morrowind install in `NEREVAR_TEST_MORROWIND` (its Data Files folder; Steam's by default),
+    /// and checks that an automatic client logs into the instance's own server. Opens a game window
+    /// for up to a minute: `cargo test --lib -- --ignored --nocapture published_release_end_to_end`
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore]
+    async fn published_release_end_to_end() {
+        use std::process::{Command, Stdio};
+        use std::time::{Duration, Instant};
+
+        let morrowind = std::env::var("NEREVAR_TEST_MORROWIND").unwrap_or_else(|_| {
+            r"C:\Program Files (x86)\Steam\steamapps\common\Morrowind\Data Files".to_string()
+        });
+        let root = std::env::temp_dir().join(format!("nerevar-e2e-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let tes3mp = root.join("tes3mp");
+        let data_dir = root.join("data");
+
+        let release = crate::github_getters::find_release_by_tag("v0.51.0").await.unwrap();
+        crate::github_getters::install_release(&release, &tes3mp).await.unwrap();
+
+        // The client config, from the Morrowind install like onboarding does
+        let base_path = root.join("openmw.base.cfg");
+        crate::openmw_ini_importer::setup_base_openmw_cfg_at(&base_path, Path::new(&morrowind)).unwrap();
+        let base = crate::openmw_ini_importer::load_cfg_file(&base_path).unwrap();
+        let resolved = ResolvedOpenMwConfig {
+            encoding: "win1252".into(),
+            data_paths: vec![],
+            content: vec!["Morrowind.esm".into(), "Tribunal.esm".into(), "Bloodmoon.esm".into()],
+        };
+        let mut settings = InstanceSettings::default();
+        settings.openmw_settings_cfg_overrides =
+            "[Video]\nwindow mode = 2\nresolution x = 800\nresolution y = 600\n".into();
+        write_client_config(
+            &tes3mp.join("config"),
+            &data_dir,
+            &ClientConfig { base: &base, resolved: &resolved, settings: &settings, files: &[] },
+        )
+        .unwrap();
+
+        // The instance's own server, never announced to the public master server
+        crate::instance_setup::apply_server_defaults(
+            &tes3mp,
+            &crate::data::NewInstanceConfig {
+                release_id: release.id.to_string(),
+                instance_name: "e2e".into(),
+                instance_description: String::new(),
+                instance_root_path: root.to_string_lossy().into_owned(),
+                instance_data_dir: data_dir.to_string_lossy().into_owned(),
+                server_host_name: "Nerevar e2e".into(),
+                max_players: 4,
+                server_port: 25600,
+                password: String::new(),
+                master_server_enabled: false,
+            },
+        )
+        .unwrap();
+
+        let server_log = root.join("server.log");
+        let mut server = Command::new(tes3mp.join("tes3mp-server.exe"))
+            .current_dir(&tes3mp)
+            .stdout(std::fs::File::create(&server_log).unwrap())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        std::thread::sleep(Duration::from_secs(3));
+        let mut client = Command::new(tes3mp.join("openmw.exe"))
+            .current_dir(&tes3mp)
+            .args(["--tes3mp-autologin", "NerevarE2E", "--tes3mp-autologin-password", "nerevar-e2e"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+
+        let started = Instant::now();
+        let mut logged_in = false;
+        while started.elapsed() < Duration::from_secs(60) {
+            let log = std::fs::read_to_string(&server_log).unwrap_or_default();
+            if log.contains("NerevarE2E (0) is now the Lua world authority") {
+                logged_in = true;
+                break;
+            }
+            if let Ok(Some(status)) = client.try_wait() {
+                println!("client exited early with {status}");
+                break;
+            }
+            std::thread::sleep(Duration::from_secs(1));
+        }
+        let _ = client.kill();
+        let _ = server.kill();
+        std::thread::sleep(Duration::from_secs(1));
+
+        let client_log = std::fs::read_dir(tes3mp.join("config"))
+            .unwrap()
+            .flatten()
+            .find(|entry| entry.file_name().to_string_lossy().starts_with("tes3mp-client-"))
+            .map(|entry| std::fs::read_to_string(entry.path()).unwrap_or_default())
+            .unwrap_or_default();
+        println!("--- server log tail\n{}", tail(&std::fs::read_to_string(&server_log).unwrap_or_default(), 15));
+        println!("--- client log tail\n{}", tail(&client_log, 15));
+        assert!(logged_in, "the client didn't log in");
+        assert!(client_log.contains(&tes3mp.join("config").join("openmw.cfg").display().to_string()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(windows)]
+    fn tail(text: &str, lines: usize) -> String {
+        let all: Vec<&str> = text.lines().collect();
+        all[all.len().saturating_sub(lines)..].join("\n")
+    }
+
     #[test]
     fn collects_only_listed_files() {
         let (root, config_dir, _) = temp_dirs("collect");

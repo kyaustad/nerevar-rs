@@ -401,6 +401,26 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Downloads the published v0.51.0 package (about 74 MB):
+    /// `cargo test --lib -- --ignored installs_a_published_release`
+    #[tokio::test]
+    #[ignore]
+    async fn installs_a_published_release() {
+        let root = temp_dir("published");
+        let dest = root.join("tes3mp");
+        let release = find_release_by_tag("v0.51.0").await.unwrap();
+        install_release(&release, &dest).await.unwrap();
+
+        assert!(dest.join("openmw.exe").is_file());
+        assert!(dest.join("tes3mp-server.exe").is_file());
+        assert!(dest.join("tes3mp-browser.exe").is_file());
+        assert!(dest.join("server/scripts/serverCore.lua").is_file());
+        assert_eq!(read_installed_release(&dest).unwrap().tag, "v0.51.0");
+        let server = crate::instance_setup::read_tes3mp_server_settings(&dest).unwrap();
+        assert_eq!(server.port, 25565);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn update_keeps_player_and_server_data() {
         let root = temp_dir("update");

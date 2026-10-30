@@ -132,7 +132,7 @@ pub fn apply_morrowind_ini_import(
     }
 
     if options.import_archives {
-        import_archives(&mut cfg, ini);
+        import_archives(&mut cfg, ini, data_files);
     }
 
     if let Some(parent) = openmw_cfg.parent() {
@@ -253,8 +253,11 @@ fn merge_fallback(cfg: &mut MultiStrMap, ini: &MultiStrMap) {
     }
 }
 
-fn import_archives(cfg: &mut MultiStrMap, ini: &MultiStrMap) {
-    let mut archives = Vec::new();
+/// `fallback-archive=` entries for Morrowind.bsa and the ini's archives. Archives missing from
+/// Data Files are skipped, because OpenMW refuses to start with them: Morrowind.ini often lists
+/// `Morrowind - Invalidation.bsa`, which some installs don't have.
+fn import_archives(cfg: &mut MultiStrMap, ini: &MultiStrMap, data_files: &Path) {
+    let mut archives = vec!["Morrowind.bsa".to_string()];
     let base = "Archives:Archive ";
 
     for i in 0.. {
@@ -262,17 +265,29 @@ fn import_archives(cfg: &mut MultiStrMap, ini: &MultiStrMap) {
         let Some(values) = ini.get(&key) else {
             break;
         };
-        archives.extend(values.iter().cloned());
+        for archive in values {
+            let archive = archive.trim();
+            if archive.is_empty()
+                || archives.iter().any(|existing| existing.eq_ignore_ascii_case(archive))
+            {
+                continue;
+            }
+            if archive_exists(data_files, archive) {
+                archives.push(archive.to_string());
+            }
+        }
     }
 
-    cfg.remove("fallback-archive");
-    cfg.insert(
-        "fallback-archive".to_string(),
-        vec!["Morrowind.bsa".to_string()],
-    );
-    if let Some(entry) = cfg.get_mut("fallback-archive") {
-        entry.extend(archives);
-    }
+    cfg.insert("fallback-archive".to_string(), archives);
+}
+
+fn archive_exists(data_files: &Path, archive: &str) -> bool {
+    let Ok(entries) = fs::read_dir(data_files) else {
+        return true; // can't tell: keep it
+    };
+    entries
+        .flatten()
+        .any(|entry| entry.file_name().to_string_lossy().eq_ignore_ascii_case(archive))
 }
 
 fn import_game_files(
@@ -644,16 +659,27 @@ mod tests {
     }
 
     #[test]
-    fn import_archives_adds_morrowind_bsa() {
+    fn import_archives_adds_morrowind_bsa_and_skips_missing_archives() {
+        let dir = std::env::temp_dir().join(format!("nerevar-archives-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("tribunal.bsa"), b"").unwrap();
+
         let mut ini = MultiStrMap::new();
         ini.insert(
             "Archives:Archive 0".to_string(),
+            vec!["Morrowind - Invalidation.bsa".to_string()],
+        );
+        ini.insert(
+            "Archives:Archive 1".to_string(),
             vec!["Tribunal.bsa".to_string()],
         );
         let mut cfg = MultiStrMap::new();
-        import_archives(&mut cfg, &ini);
-        let archives = cfg.get("fallback-archive").unwrap();
-        assert_eq!(archives[0], "Morrowind.bsa");
-        assert!(archives.contains(&"Tribunal.bsa".to_string()));
+        import_archives(&mut cfg, &ini, &dir);
+        assert_eq!(
+            cfg.get("fallback-archive").unwrap(),
+            &vec!["Morrowind.bsa".to_string(), "Tribunal.bsa".to_string()]
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 }

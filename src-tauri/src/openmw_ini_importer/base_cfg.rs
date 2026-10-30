@@ -42,7 +42,7 @@ pub fn setup_base_openmw_cfg(morrowind_data_files: &Path) -> Result<(), String> 
     setup_base_openmw_cfg_at(&base_openmw_cfg_path()?, morrowind_data_files)
 }
 
-fn setup_base_openmw_cfg_at(path: &Path, morrowind_data_files: &Path) -> Result<(), String> {
+pub fn setup_base_openmw_cfg_at(path: &Path, morrowind_data_files: &Path) -> Result<(), String> {
     if !morrowind_data_files.join("Morrowind.esm").is_file() {
         return Err(format!(
             "Morrowind.esm not found in {}",

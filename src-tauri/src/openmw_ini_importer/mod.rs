@@ -7,6 +7,7 @@ mod plugin_index;
 
 pub use base_cfg::{
     base_openmw_cfg_path, load_base_openmw_cfg, read_base_data_path, setup_base_openmw_cfg,
+    setup_base_openmw_cfg_at,
     validate_base_openmw_cfg, OPENMW_BASE_CFG,
 };
 pub use content_files::{

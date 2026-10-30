@@ -187,7 +187,7 @@ mod tests {
 
         assert_eq!(package.tree_checksum, legacy_tree);
         assert_eq!(package.files.len(), 2);
-        assert_eq!(package.total_size_bytes, 10);
+        assert_eq!(package.total_size_bytes, 9); // "alpha" + "beta"
 
         for file in &package.files {
             let path = dir.join(&file.path);

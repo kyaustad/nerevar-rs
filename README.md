@@ -2,7 +2,7 @@
 
 **Morrowind multiplayer, without the mod-list headaches.**
 
-Nerevar is a desktop companion for [TES3MP](https://tes3mp.com/) that keeps everyone on the same mods, load order, and game data. Server owners can change a mod list and push updates to their group automatically. Players connect once and stay in sync. Nerevar handles the setup that used to require manual file copying, config editing, and hours of troubleshooting.
+Nerevar is a desktop companion for [TES3MP-NG](https://github.com/kyaustad/TES3MP-NG) (TES3MP on OpenMW 0.51, with OpenMW Lua mod support) that keeps everyone on the same mods, load order, and game data. Server owners can change a mod list and push updates to their group automatically. Players connect once and stay in sync. Nerevar handles the setup that used to require manual file copying, config editing, and hours of troubleshooting.
 
 ---
 
@@ -124,7 +124,7 @@ Connection details can be edited later from the instance settings page without r
 On first launch, Nerevar guides you through:
 
 1. **Data directory** — where instances, TES3MP files, and synced mod data live (separate from the app itself).
-2. **Morrowind installation** — path to your Data Files / `Morrowind.esm` for OpenMW scaffolding.
+2. **Morrowind installation** — path to your Data Files / `Morrowind.esm`. Nerevar imports it once and generates each instance's `openmw.cfg` from it, so OpenMW's wizard isn't needed.
 3. **Sync port** — default `25567`; used by Nerevar’s local sync server (not the TES3MP game port).
 4. **In-app guide** — overview of hosting vs joining; read both paths before finishing setup.
 
@@ -141,7 +141,7 @@ The dashboard is the home screen after setup:
 - **Settings** — Nerevar-wide options such as sync port.
 - **MO2 plugin** — workflow for exporting a Mod Organizer 2 mod list into Nerevar.
 
-Each instance keeps its own TES3MP copy, data directory, and OpenMW launch configuration so different servers never overwrite each other.
+Each instance keeps its own portable TES3MP-NG install (with its own `config/` and `userdata/` folders) and data directory, so different servers never overwrite each other, and nothing goes to `Documents/My Games/OpenMW`.
 
 ---
 
@@ -168,8 +168,8 @@ The sections below are for contributors, server operators who want deeper contex
 | Desktop shell | [Tauri 2](https://v2.tauri.app/)                   |
 | UI            | React 19, TypeScript, Vite, Tailwind CSS           |
 | Backend       | Rust                                               |
-| Multiplayer   | TES3MP (bundled per instance)                      |
-| Engine config | OpenMW / OpenMW cfg generation and launch overlays |
+| Multiplayer   | TES3MP-NG (portable install per instance)          |
+| Engine config | Per-instance OpenMW cfg generation and seeding     |
 
 **Repository:** [github.com/kyaustad/nerevar-rs](https://github.com/kyaustad/nerevar-rs)
 
@@ -193,9 +193,10 @@ Nerevar splits responsibilities between a React frontend and a Rust backend invo
 | `sync_host`           | Active hosting instance and manifest publication                        |
 | `sync_client`         | Remote fetch, incremental download, validation, cancel                  |
 | `instance_data`       | Manifest build/load, load order, MO2 CSV import, OpenMW resolution      |
-| `instance_setup`      | TES3MP server/client default cfg, instance layout                       |
+| `instance_setup`      | TES3MP-NG server/client cfg (`config/tes3mp-*.cfg`), instance layout     |
 | `process_manager`     | Launch/stop TES3MP client and server, stdout/stderr streaming           |
-| `openmw_ini_importer` | Global OpenMW scaffold and per-instance launch cfg                      |
+| `openmw_ini_importer` | Morrowind.ini import into the base OpenMW cfg                           |
+| `client_config`       | Seeds each instance's `config/` (openmw.cfg, settings.cfg, shaders.yaml) |
 | `port_conflict`       | Detect processes blocking sync or game ports                            |
 | `config`              | Persistent `config.json` (instances, paths, sync port, onboarding flag) |
 
@@ -205,11 +206,12 @@ User data lives under a configurable **root path** (chosen in onboarding). Each 
 
 ## How sync works under the hood
 
-1. **Manifest** — JSON describing packages (mod folders), file paths, SHA-256 hashes, plugin load order, TES3MP server port, and optional password metadata.
+1. **Manifest** — JSON describing packages (mod folders), file paths, SHA-256 hashes, plugin load order, the host's TES3MP-NG release, TES3MP server port, settings, client files such as `shaders.yaml`, and optional password metadata.
 2. **Hosting** — When the host uses **Save & host manifest**, Nerevar writes the manifest and registers the instance as the active sync host. The local sync server serves manifest and file endpoints to authenticated clients.
 3. **Client sync** — Synced instances call the remote host’s Nerevar sync port (with optional `X-Nerevar-Sync-Password`). The client compares remote manifest hash and `last_synced_at`; if outdated, it downloads only changed or missing files.
 4. **Validation** — Before launch, Nerevar verifies on-disk files against the manifest and resolves OpenMW load order from the synced data.
-5. **Launch** — OpenMW launch cfg is written to an instance overlay; TES3MP client cfg is updated with host, game port, and password. For owned instances connecting locally, client cfg targets `127.0.0.1` with settings read from the instance server cfg.
+5. **Release** — Synced instances install the host's TES3MP-NG release when it changes, since TES3MP-NG clients need the server's build. Updates keep the install's `config/` and `userdata/`.
+6. **Launch** — The instance's `config/openmw.cfg` is written: `data=` and `content=` follow the load order; other values, `settings.cfg` settings and synced files are seeded from the host and then left to the player (a value is only updated when the host changes it and the player kept the previous one). `config/tes3mp-client.cfg` gets the host, game port, and password. For owned instances connecting locally, it targets `127.0.0.1` with the instance's server settings.
 
 Sync is incremental: hosts republish after changes; clients pull deltas rather than full redownloads when possible.
 

@@ -177,7 +177,7 @@ export function InstanceEditSection({
         <p className="font-serif text-sm text-foreground/60">
           {isSynced
             ? "Used for Nerevar sync and TES3MP client connection. Leave blank if the host has no password."
-            : "Written to tes3mp-server-default.cfg. Leave blank for no password."}
+            : "Written to the instance's config/tes3mp-server.cfg. Leave blank for no password."}
         </p>
         {form.formState.errors.password ? (
           <FieldError errors={[form.formState.errors.password]} />

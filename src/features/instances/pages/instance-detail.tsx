@@ -261,7 +261,7 @@ function OwnedPlaySection({ instance }: { instance: InstanceConfig }) {
     <>
       <DetailSection
         title="Play"
-        description="Launch TES3MP using the generated OpenMW launch config for this instance."
+        description="Launch TES3MP-NG with this instance's own config: its openmw.cfg follows the load order, and your settings changes are kept."
       >
         <div className="grid gap-2 sm:grid-cols-2">
           <Button

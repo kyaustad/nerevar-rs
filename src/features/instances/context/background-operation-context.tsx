@@ -43,7 +43,7 @@ const OPERATION_LABELS: Record<BackgroundOperationKind, string> = {
   scanInstanceData: "Scanning data directory",
   importMo2Modlist: "Importing MO2 modlist",
   saveLoadOrder: "Saving load order",
-  writeLaunchCfg: "Writing launch config",
+  writeLaunchCfg: "Writing client config",
   hostManifest: "Building sync manifest",
 };
 

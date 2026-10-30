@@ -17,7 +17,7 @@ const PHASE_LABELS: Record<BackgroundOperationPhase, string> = {
   hashingPackage: "Processing package",
   hashingFiles: "Hashing files",
   writingManifest: "Writing manifest",
-  writingLaunchCfg: "Writing launch cfg",
+  writingLaunchCfg: "Writing client config",
   complete: "Complete",
 };
 

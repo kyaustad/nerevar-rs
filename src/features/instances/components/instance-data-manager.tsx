@@ -228,9 +228,9 @@ export function InstanceDataManager({
             operationId,
           }),
       });
-      toast.success(`Launch config written to ${path}`);
+      toast.success(`Client config written to ${path}`);
     } catch (error) {
-      toast.error(`Failed to write launch config: ${error}`);
+      toast.error(`Failed to write the client config: ${error}`);
     }
   };
 
@@ -589,7 +589,7 @@ function DataManagerToolbar({
         {writingLaunchCfg ? (
           <Loader2 className="animate-spin" data-icon="inline-start" />
         ) : null}
-        Write launch cfg
+        Write client config
       </Button>
       <Button
         variant="launch"
@@ -960,7 +960,7 @@ function PluginList({
               Global plugin load order
             </p>
             <p className="font-serif text-sm text-foreground/65">
-              Controls final <code>content=</code> order for launch config. Base
+              Controls final <code>content=</code> order in the client&apos;s openmw.cfg. Base
               game ESMs are included and can be reordered with other plugins.
             </p>
           </div>

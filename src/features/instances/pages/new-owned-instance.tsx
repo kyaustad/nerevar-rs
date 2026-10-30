@@ -200,8 +200,8 @@ export function NewInstancePage() {
               render={({ field, fieldState }) => (
                 <InstanceFormField
                   id="new-instance-release"
-                  label="TES3MP Release"
-                  description="This is the version of TES3MP that will be used for this instance. The latest non-VR release TES3MP 0.8.1 is the only supported release currently. I don't really plan on supporting older releases."
+                  label="TES3MP-NG Release"
+                  description="The TES3MP-NG version this instance runs (TES3MP on OpenMW 0.51, with OpenMW Lua mod support). Players who sync from this instance get the same version automatically: TES3MP-NG clients need the server's build to connect."
                   invalid={fieldState.invalid}
                   error={fieldState.error}
                 >
@@ -316,11 +316,11 @@ export function NewInstancePage() {
             <div className="flex flex-col gap-2">
               <Label className={SECTION_LABEL}>Server Defaults</Label>
               <p className={SECTION_DESC}>
-                {`This is the default server settings for the instance. These values will be used to populate the`}{" "}
+                {`These server settings are written to the instance's`}{" "}
                 <code className="font-mono text-accent bg-secondary/70 p-1">
-                  tes3mp-server-defaults.cfg
+                  config/tes3mp-server.cfg
                 </code>{" "}
-                {` file after setting up your instance.`}
+                {`, which overrides TES3MP-NG's defaults.`}
               </p>
 
               <Controller

@@ -221,11 +221,11 @@ function MorrowindInstallationStep({ onNext }: { onNext: () => void }) {
       morrowindInstallationPath,
     })
       .then(() => {
-        toast.success("Nerevar OpenMW scaffold created");
+        toast.success("Morrowind install imported");
         validateOpenMWConfig();
       })
       .catch((error) => {
-        toast.error(`Failed to generate default OpenMW config: ${error}`);
+        toast.error(`Failed to import the Morrowind install: ${error}`);
       });
   };
 
@@ -245,19 +245,14 @@ function MorrowindInstallationStep({ onNext }: { onNext: () => void }) {
           Locate Morrowind Installation
         </CardTitle>
         <CardDescription className="font-serif text-base font-light tracking-[0.05em] leading-relaxed text-foreground/75">
-          Nerevar keeps your personal{" "}
+          TES3MP-NG installs are portable: each Nerevar instance keeps its own{" "}
           <code className="font-mono text-sm text-accent bg-secondary/70 p-1 whitespace-nowrap">
             openmw.cfg
           </code>{" "}
-          untouched. We back it up to{" "}
-          <code className="font-mono text-sm text-accent bg-secondary/70 p-1 whitespace-nowrap">
-            openmw.backup.cfg
-          </code>{" "}
-          and create{" "}
-          <code className="font-mono text-sm text-accent bg-secondary/70 p-1 whitespace-nowrap">
-            openmw.nerevar.cfg
-          </code>{" "}
-          as the base config used when launching TES3MP through Nerevar. A{" "}
+          and settings in its own folder, and your personal OpenMW config is
+          never touched. Nerevar imports your Morrowind install once and
+          generates each instance&apos;s config from it, so you never need
+          OpenMW&apos;s wizard. A{" "}
           <code className="font-mono text-sm text-accent bg-secondary/70 p-1 whitespace-nowrap">
             Morrowind.ini
           </code>{" "}
@@ -280,8 +275,8 @@ function MorrowindInstallationStep({ onNext }: { onNext: () => void }) {
                 />
               </motion.div>
               <p className="text-sm text-accent max-w-xs text-center">
-                Nerevar OpenMW scaffold is ready. Your existing global config was preserved in{" "}
-                <code className="font-mono text-xs">openmw.backup.cfg</code> if one existed.
+                Your Morrowind install is imported. New instances get their
+                OpenMW config from it.
               </p>
             </div>
           </div>
@@ -297,8 +292,8 @@ function MorrowindInstallationStep({ onNext }: { onNext: () => void }) {
                 <XIcon className="size-8 text-destructive" strokeWidth={2} />
               </motion.div>
               <p className="text-sm text-accent max-w-xs text-center">
-                Select your Morrowind.esm file so Nerevar can create{" "}
-                <code className="font-mono text-xs">openmw.nerevar.cfg</code>.
+                Select your Morrowind.esm file so Nerevar can import your
+                Morrowind install.
               </p>
             </div>
             <Label
@@ -334,7 +329,7 @@ function MorrowindInstallationStep({ onNext }: { onNext: () => void }) {
               }
               onClick={handleGenerateDefaultOpenMWConfig}
             >
-              Generate Nerevar OpenMW scaffold
+              Import Morrowind install
             </Button>
           </div>
         )}

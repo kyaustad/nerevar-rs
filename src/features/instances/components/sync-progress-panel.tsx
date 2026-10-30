@@ -13,7 +13,7 @@ const PHASE_LABELS: Record<SyncProgressEvent["phase"], string> = {
   downloading: "Downloading",
   applyingLoadOrder: "Applying load order",
   validating: "Verifying files",
-  writingLaunchCfg: "Writing launch config",
+  writingLaunchCfg: "Writing client config",
   complete: "Complete",
   cancelled: "Paused",
   failed: "Failed",

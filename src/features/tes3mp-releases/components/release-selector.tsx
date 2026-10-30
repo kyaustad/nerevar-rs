@@ -12,7 +12,17 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-const RECOMMENDED_RELEASE = "TES3MP 0.8.1";
+// TES3MP-NG releases (kyaustad/TES3MP-NG), newest first
+function releaseLabel(release: GithubReleaseResponse): string {
+  return release.name || `TES3MP-NG ${release.tag_name}`;
+}
+
+/** The newest release that isn't a pre-release. */
+function recommendedRelease(
+  releases: GithubReleaseResponse[],
+): GithubReleaseResponse | undefined {
+  return releases.find((release) => !release.prerelease) ?? releases[0];
+}
 
 function RecommendedBadge({ className }: { className?: string }) {
   return (
@@ -37,10 +47,9 @@ export function ReleaseSelector({
 }) {
   const [releases, setReleases] = useState<GithubReleaseResponse[]>([]);
 
-  const selectedRelease = releases.find(
-    (release) => release.id.toString() === value,
-  );
-  const showRecommendedBadge = selectedRelease?.name === RECOMMENDED_RELEASE;
+  const recommended = recommendedRelease(releases);
+  const showRecommendedBadge =
+    recommended !== undefined && recommended.id.toString() === value;
 
   useEffect(() => {
     const fetchReleases = async () => {
@@ -50,6 +59,13 @@ export function ReleaseSelector({
     };
     fetchReleases();
   }, []);
+
+  // Preselect the recommended release
+  useEffect(() => {
+    if (!value && recommended) {
+      onValueChange(recommended.id.toString());
+    }
+  }, [value, recommended, onValueChange]);
 
   const handleReleaseChange = (nextValue: string) => {
     onValueChange(nextValue);
@@ -81,14 +97,13 @@ export function ReleaseSelector({
       >
         {releases.map((release) => (
           <SelectItem
-            disabled={release.name !== RECOMMENDED_RELEASE}
             key={release.id}
             value={release.id.toString()}
-            textValue={release.name}
+            textValue={releaseLabel(release)}
             className="my-1 justify-between rounded-lg border border-border/50 p-2"
           >
-            <SelectItemText>{release.name}</SelectItemText>
-            {release.name === RECOMMENDED_RELEASE && (
+            <SelectItemText>{releaseLabel(release)}</SelectItemText>
+            {release.id === recommended?.id && (
               <RecommendedBadge className="mr-8" />
             )}
           </SelectItem>

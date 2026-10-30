@@ -2,7 +2,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { SyncProgressPanel } from "@/features/instances/components/sync-progress-panel";
 import { useInstanceSync } from "@/features/instances/hooks/use-instance-sync";
 import {
@@ -11,7 +10,6 @@ import {
   type NewConnectionFormValues,
 } from "@/features/instances/schemas/new-connection-schema";
 import { useConfig } from "@/features/config/context/config-context-provider";
-import { ReleaseSelector } from "@/features/tes3mp-releases/components/release-selector";
 import { formatByteSize } from "@/lib/format";
 import type { NewConnectionConfig, RemoteManifestSummary } from "@/types";
 import { standardSchemaResolver } from "@hookform/resolvers/standard-schema";
@@ -19,28 +17,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ArrowLeft, Loader2, Radio, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { navigate } from "wouter/use-browser-location";
 
 const SECTION_LABEL =
   "text-lg font-light font-display tracking-[0.08em] text-foreground";
-
-function buildConnectionRootPath(rootPath: string, name: string): string {
-  const base = rootPath.replace(/\//g, "\\").replace(/\\+$/, "");
-  const folder = name
-    .trim()
-    .replace(/[<>:"/\\|?*]/g, "")
-    .trim();
-  if (!base) return folder;
-  if (!folder) return base;
-  return `${base}\\${folder}`;
-}
-
-function buildConnectionDataDir(rootPath: string, name: string): string {
-  return `${buildConnectionRootPath(rootPath, name)}\\data`;
-}
 
 export function NewConnectionPage() {
   const config = useConfig();
@@ -56,25 +39,9 @@ export function NewConnectionPage() {
     defaultValues: {
       ...newConnectionDefaultValues,
       remoteSyncPort: config?.syncPort ?? 25567,
-      instanceRootPath: buildConnectionRootPath(config?.rootPath ?? "", ""),
-      instanceDataDir: buildConnectionDataDir(config?.rootPath ?? "", ""),
     },
     mode: "onSubmit",
   });
-
-  const connectionName = form.watch("connectionName");
-
-  useEffect(() => {
-    const root = config?.rootPath ?? "";
-    form.setValue(
-      "instanceRootPath",
-      buildConnectionRootPath(root, connectionName),
-    );
-    form.setValue(
-      "instanceDataDir",
-      buildConnectionDataDir(root, connectionName),
-    );
-  }, [connectionName, config?.rootPath, form]);
 
   const testConnection = async () => {
     const values = form.getValues();
@@ -112,11 +79,6 @@ export function NewConnectionPage() {
     setCreating(true);
     try {
       const payload: NewConnectionConfig = {
-        releaseId: values.releaseId,
-        connectionName: values.connectionName,
-        connectionDescription: values.connectionDescription,
-        instanceRootPath: values.instanceRootPath,
-        instanceDataDir: values.instanceDataDir,
         remoteHost: values.remoteHost,
         remoteSyncPort: values.remoteSyncPort,
         syncPassword: values.syncPassword,
@@ -171,59 +133,13 @@ export function NewConnectionPage() {
               New connection
             </h1>
             <p className="mt-2 font-serif text-sm text-foreground/75">
-              Connect to a Nerevar host, download its manifest, and sync mod
-              data into a local TES3MP instance.
+              Connect to a Nerevar host. Nerevar installs the host&apos;s
+              TES3MP-NG release, syncs its mods and settings, and names the
+              instance after the host&apos;s, under your Nerevar folder.
             </p>
           </div>
 
           <form onSubmit={onSubmit} className="flex flex-col gap-5">
-            <Field>
-              <FieldLabel className={SECTION_LABEL}>TES3MP release</FieldLabel>
-              <Controller
-                control={form.control}
-                name="releaseId"
-                render={({ field, fieldState }) => (
-                  <>
-                    <ReleaseSelector
-                      value={field.value}
-                      onValueChange={field.onChange}
-                    />
-                    {fieldState.error ? (
-                      <FieldError errors={[fieldState.error]} />
-                    ) : null}
-                  </>
-                )}
-              />
-            </Field>
-
-            <Field>
-              <FieldLabel className={SECTION_LABEL} htmlFor="connectionName">
-                Connection name
-              </FieldLabel>
-              <Input
-                id="connectionName"
-                disabled={busy}
-                {...form.register("connectionName")}
-              />
-              {form.formState.errors.connectionName ? (
-                <FieldError errors={[form.formState.errors.connectionName]} />
-              ) : null}
-            </Field>
-
-            <Field>
-              <FieldLabel
-                className={SECTION_LABEL}
-                htmlFor="connectionDescription"
-              >
-                Description
-              </FieldLabel>
-              <Textarea
-                id="connectionDescription"
-                disabled={busy}
-                {...form.register("connectionDescription")}
-              />
-            </Field>
-
             <div className="grid gap-4 sm:grid-cols-2">
               <Field>
                 <FieldLabel className={SECTION_LABEL} htmlFor="remoteHost">
@@ -266,20 +182,8 @@ export function NewConnectionPage() {
                 {...form.register("syncPassword")}
               />
               <p className="font-serif text-sm text-foreground/60">
-                Required when the host TES3MP server has a password. Also written
-                to tes3mp-client-default.cfg for game connection.
+                Required when the host&apos;s TES3MP server has a password.
               </p>
-            </Field>
-
-            <Field>
-              <FieldLabel className={SECTION_LABEL} htmlFor="instanceRootPath">
-                Local instance path
-              </FieldLabel>
-              <Input
-                id="instanceRootPath"
-                disabled={busy}
-                {...form.register("instanceRootPath")}
-              />
             </Field>
 
             {preview ? (
@@ -291,8 +195,16 @@ export function NewConnectionPage() {
                   {preview.instanceName} — {preview.packageCount} package(s),{" "}
                   {formatByteSize(preview.totalDownloadBytes)} total
                 </p>
+                {preview.instanceDescription ? (
+                  <p className="font-serif text-sm text-foreground/65">
+                    {preview.instanceDescription}
+                  </p>
+                ) : null}
                 <p className="font-mono text-xs text-accent/80">
-                  TES3MP server port: {preview.tes3mpServerPort}
+                  {preview.tes3mpReleaseTag
+                    ? `TES3MP-NG ${preview.tes3mpReleaseTag}`
+                    : "Host is running an older Nerevar: ask them to update"}
+                  {" · "}game port {preview.tes3mpServerPort}
                   {preview.passwordRequired ? " · password required" : ""}
                 </p>
                 <ul className="font-mono text-[0.65rem] text-foreground/60 space-y-1 max-h-24 overflow-y-auto">

@@ -7,13 +7,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { INSTANCE_DATA_CARD_CLASS } from "@/features/instances/components/instance-data-manager";
-import { displaySettingValue, makeSettingValue } from "@/lib/setting-value";
+import { LuaModsSection } from "@/features/instances/components/lua-mods-section";
+import { PostProcessingSection } from "@/features/instances/components/post-processing-section";
+import {
+  getOpenMwValue,
+  setOpenMwValue,
+  SettingField,
+} from "@/features/instances/components/setting-field";
 import type {
   InstanceSettings,
   SettingDefinition,
@@ -52,108 +56,6 @@ function setTes3mpValue(
   nextEntries.push({ name, value });
   nextEntries.sort((a, b) => a.name.localeCompare(b.name));
   return { ...settings, tes3mpGameSettings: nextEntries };
-}
-
-function openMwSection(definition: SettingDefinition): string {
-  if (definition.category === "openMwGraphics") return "Graphics";
-  if (definition.category === "openMwShaders") return "Shaders";
-  return "Game";
-}
-
-function getOpenMwValue(
-  settings: InstanceSettings,
-  definition: SettingDefinition,
-): SettingValue {
-  const section = openMwSection(definition);
-  return (
-    settings.openmwSettings[section]?.[definition.key] ??
-    definition.defaultValue
-  );
-}
-
-function setOpenMwValue(
-  settings: InstanceSettings,
-  definition: SettingDefinition,
-  value: SettingValue,
-): InstanceSettings {
-  const section = openMwSection(definition);
-  return {
-    ...settings,
-    openmwSettings: {
-      ...settings.openmwSettings,
-      [section]: {
-        ...(settings.openmwSettings[section] ?? {}),
-        [definition.key]: value,
-      },
-    },
-  };
-}
-
-function SettingField({
-  definition,
-  value,
-  disabled,
-  onChange,
-}: {
-  definition: SettingDefinition;
-  value: SettingValue;
-  disabled?: boolean;
-  onChange: (value: SettingValue) => void;
-}) {
-  if (definition.valueType === "boolean") {
-    return (
-      <div className="flex items-start justify-between gap-4 rounded-lg border border-border/50 bg-background/20 px-4 py-3">
-        <div className="space-y-1">
-          <Label className="font-display text-sm tracking-[0.08em] text-foreground">
-            {definition.label}
-          </Label>
-          <p className="font-serif text-sm leading-relaxed text-foreground/65">
-            {definition.description}
-          </p>
-        </div>
-        <Switch
-          checked={displaySettingValue(value) === true}
-          disabled={disabled}
-          onCheckedChange={(checked) =>
-            onChange(makeSettingValue("boolean", checked))
-          }
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2 rounded-lg border border-border/50 bg-background/20 px-4 py-3">
-      <Label className="font-display text-sm tracking-[0.08em] text-foreground">
-        {definition.label}
-      </Label>
-      <p className="font-serif text-sm leading-relaxed text-foreground/65">
-        {definition.description}
-      </p>
-      <Input
-        type={definition.valueType === "integer" ? "number" : "text"}
-        value={String(displaySettingValue(value))}
-        disabled={disabled}
-        min={definition.minInteger ?? undefined}
-        max={definition.maxInteger ?? undefined}
-        className="font-mono"
-        onChange={(event) => {
-          const raw = event.target.value;
-          if (definition.valueType === "integer") {
-            onChange(
-              makeSettingValue("integer", Number.parseInt(raw, 10) || 0),
-            );
-            return;
-          }
-          if (definition.valueType === "float") {
-            onChange(makeSettingValue("float", Number.parseFloat(raw) || 0));
-            return;
-          }
-          onChange(makeSettingValue("string", raw));
-        }}
-      />
-    </div>
-  );
 }
 
 function SettingsGroup({
@@ -325,6 +227,9 @@ export function InstanceServerSettingsManager({
       gameplay: definitions.filter((d) => d.category === "tes3mpGameplay"),
       graphics: definitions.filter((d) => d.category === "openMwGraphics"),
       shaders: definitions.filter((d) => d.category === "openMwShaders"),
+      postProcessing: definitions.filter(
+        (d) => d.category === "openMwPostProcessing",
+      ),
     }),
     [definitions],
   );
@@ -370,11 +275,11 @@ export function InstanceServerSettingsManager({
                 </CardTitle>
               </div>
               <CardDescription className="font-serif text-sm leading-relaxed text-foreground/70">
-                Configure gameplay rules for {instanceName}. Gameplay settings
-                are written to TES3MP <code>config.lua</code> and enforced by
-                your server. Graphics and shader settings are synced through the
-                manifest and applied to each player&apos;s OpenMW{" "}
-                <code>settings.cfg</code> at launch.
+                Configure {instanceName}. Gameplay settings are written to
+                TES3MP <code>config.lua</code> and enforced by your server, and
+                Lua script modes to its <code>scriptPolicy.json</code>.
+                Graphics, shader and post-processing settings are synced through
+                the manifest and seeded into each player&apos;s OpenMW config.
               </CardDescription>
             </div>
             {readOnly ? (
@@ -387,10 +292,12 @@ export function InstanceServerSettingsManager({
 
         <CardContent className="px-6 py-5">
           <Tabs defaultValue="gameplay" className="gap-4">
-            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 bg-input/30 p-1 sm:grid-cols-4">
+            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 bg-input/30 p-1 sm:grid-cols-3 lg:grid-cols-6">
               <TabsTrigger value="gameplay">Gameplay</TabsTrigger>
               <TabsTrigger value="graphics">Graphics</TabsTrigger>
               <TabsTrigger value="shaders">Shaders</TabsTrigger>
+              <TabsTrigger value="post-processing">Post-processing</TabsTrigger>
+              <TabsTrigger value="lua">Lua mods</TabsTrigger>
               <TabsTrigger value="advanced">Advanced</TabsTrigger>
             </TabsList>
 
@@ -419,6 +326,23 @@ export function InstanceServerSettingsManager({
                 title="OpenMW shaders"
                 description="Shader and visual compatibility settings that affect how modded meshes, normal maps, and lighting render for all players."
                 definitions={grouped.shaders}
+                settings={settings}
+                readOnly={readOnly}
+                onChange={setSettings}
+              />
+            </TabsContent>
+            <TabsContent value="post-processing" className="mt-0 outline-none">
+              <PostProcessingSection
+                instanceId={instanceId}
+                definitions={grouped.postProcessing}
+                settings={settings}
+                readOnly={readOnly}
+                onChange={setSettings}
+              />
+            </TabsContent>
+            <TabsContent value="lua" className="mt-0 outline-none">
+              <LuaModsSection
+                instanceId={instanceId}
                 settings={settings}
                 readOnly={readOnly}
                 onChange={setSettings}

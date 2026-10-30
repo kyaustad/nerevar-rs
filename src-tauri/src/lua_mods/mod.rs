@@ -88,10 +88,14 @@ pub fn scan_lua_mods(data_paths: &[String], content: &[String]) -> Vec<LuaModInf
     mods
 }
 
+/// OpenMW's own scripts, which TES3MP-NG always runs in client mode.
+const BUILT_IN_SCRIPTS: &str = "scripts/omw/";
+
 fn script_info(tags: Vec<String>, path: String, dirs: &[PathBuf]) -> LuaScriptInfo {
     let is_global = tags.iter().any(|tag| tag.eq_ignore_ascii_case("GLOBAL"));
     let found = resolve_vfs_path(&path, dirs).is_some();
-    let suggestion = if is_global && found {
+    let built_in = path.to_ascii_lowercase().starts_with(BUILT_IN_SCRIPTS);
+    let suggestion = if is_global && found && !built_in {
         suggest_script_mode(&path, dirs)
     } else {
         None
@@ -135,6 +139,25 @@ pub fn instance_lua_mods(data_dir: &Path) -> Result<Vec<LuaModInfo>, String> {
 mod tests {
     use super::*;
     use crate::instance_settings::ScriptMode;
+
+    /// Prints the Lua mods and suggestions for the data folders in `NEREVAR_TEST_LUA_DATA`
+    /// (separated by `;`): `cargo test --lib -- --ignored --nocapture prints_lua_mod_suggestions`
+    #[test]
+    #[ignore]
+    fn prints_lua_mod_suggestions() {
+        let folders = std::env::var("NEREVAR_TEST_LUA_DATA").expect("set NEREVAR_TEST_LUA_DATA");
+        let data_paths: Vec<String> = folders.split(';').map(str::to_string).collect();
+        let content: Vec<String> = Vec::new();
+        for lua_mod in scan_lua_mods(&data_paths, &content) {
+            println!("== {} ({})", lua_mod.file, lua_mod.data_path);
+            for script in lua_mod.scripts.iter().filter(|script| script.is_global) {
+                match &script.suggestion {
+                    Some(s) => println!("  {} -> {:?} ({:?}): {}", script.path, s.mode, s.confidence, s.reasons.join("; ")),
+                    None => println!("  {} -> not found", script.path),
+                }
+            }
+        }
+    }
 
     #[test]
     fn parses_omwscripts_lines() {

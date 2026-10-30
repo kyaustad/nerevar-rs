@@ -64,7 +64,7 @@ const SIGNALS: &[Signal] = &[
     Signal { patterns: &["Lockable.lock", "Lockable.unlock", "setTrapSpell"], kind: Kind::WorldChange, description: "Locks, unlocks or traps objects" },
     Signal { patterns: &["setBarterGold"], kind: Kind::WorldChange, description: "Changes merchants' gold" },
     Signal { patterns: &["onUpdate"], kind: Kind::Autonomous, description: "Runs every frame (onUpdate)" },
-    Signal { patterns: &["newSimulationTimer", "newGameTimer", "newUnsavableSimulationTimer", "newUnsavableGameTimer"], kind: Kind::Autonomous, description: "Uses timers" },
+    Signal { patterns: TIMER_PATTERNS, kind: Kind::Autonomous, description: "Uses timers" },
     Signal { patterns: &["onObjectActive", "onActorActive"], kind: Kind::Autonomous, description: "Reacts to objects becoming active" },
     Signal { patterns: &["world.activeActors"], kind: Kind::Autonomous, description: "Goes through all active actors" },
     Signal { patterns: &["I.Activation", "addHandlerForType", "addHandlerForObject"], kind: Kind::PlayerHandler, description: "Handles activation or item use" },
@@ -74,6 +74,8 @@ const SIGNALS: &[Signal] = &[
     Signal { patterns: &["world.createRecord"], kind: Kind::Warning, description: "Creates records (world.createRecord): objects made from them aren't synced to other players" },
     Signal { patterns: &["world.players"], kind: Kind::Warning, description: "Uses world.players, which only lists the local player in TES3MP-NG" },
 ];
+
+const TIMER_PATTERNS: &[&str] = &["newSimulationTimer", "newGameTimer", "newUnsavableSimulationTimer", "newUnsavableGameTimer"];
 
 /// Most files read through `require()` for one script.
 const MAX_FILES: usize = 25;
@@ -96,8 +98,12 @@ fn suggest_from_code(code: &str) -> ScriptModeSuggestion {
     let has = |found: &[&Signal], kind: Kind| found.iter().any(|signal| signal.kind == kind);
 
     let world_change = has(&found, Kind::WorldChange) || storage_write;
-    let autonomous = has(&found, Kind::Autonomous);
     let player_handler = has(&found, Kind::PlayerHandler);
+    // Timers alone don't make a script autonomous when it handles players' events: they're
+    // usually delayed effects of those events
+    let autonomous = found.iter().any(|signal| {
+        signal.kind == Kind::Autonomous && (signal.patterns != TIMER_PATTERNS || !player_handler)
+    });
 
     let mut reasons: Vec<String> = Vec::new();
     for kind in [Kind::WorldChange, Kind::Autonomous, Kind::PlayerHandler] {
@@ -254,6 +260,14 @@ mod tests {
         let suggestion = suggest_from_code(code);
         assert_eq!(suggestion.mode, ScriptMode::Client);
         assert!(suggestion.reasons.iter().any(|r| r.contains("in response to events")));
+    }
+
+    #[test]
+    fn delayed_effects_of_activation_stay_on_clients() {
+        let code = "I.Activation.addHandlerForType(types.Door, function(door, actor)
+ async:newUnsavableSimulationTimer(0.5, function() actor:teleport(cell, pos) end)
+end)";
+        assert_eq!(suggest_from_code(code).mode, ScriptMode::Client);
     }
 
     #[test]

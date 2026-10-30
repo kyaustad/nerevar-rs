@@ -84,6 +84,8 @@ mod tests {
             openmw_settings: Default::default(),
             openmw_cfg_overrides: vec![],
             openmw_settings_cfg_overrides: "[Cells]\nviewing distance = 7168".into(),
+            lua_script_policy: Default::default(),
+            shaders_yaml: None,
         };
         let overlay = format_settings_overlay(&settings);
         assert!(overlay.contains("[Cells]"));

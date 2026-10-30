@@ -2,6 +2,7 @@ pub mod commands;
 mod defaults;
 pub mod openmw_cfg_overrides;
 mod openmw_settings;
+pub mod script_policy;
 mod storage;
 mod tes3mp_lua;
 mod types;
@@ -17,7 +18,9 @@ pub use storage::{
 };
 pub use openmw_cfg_overrides::apply_openmw_cfg_override_lines;
 pub use openmw_settings::{format_settings_overlay, parse_settings_cfg, render_settings_cfg};
+pub use script_policy::write_script_policy;
 pub use types::{
-    InstanceSettings, SettingCategory, SettingDefinition, SettingValue, SettingValueType,
-    Tes3mpGameSettingEntry,
+    InstanceSettings, LuaScriptPolicy, ScriptMode, SettingCategory, SettingDefinition,
+    SettingValue, SettingValueType, Tes3mpGameSettingEntry, POST_PROCESSING_SECTION,
+    SHADER_CHAIN_KEY,
 };

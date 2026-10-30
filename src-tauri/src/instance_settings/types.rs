@@ -12,6 +12,56 @@ pub enum SettingCategory {
     Tes3mpGameplay,
     OpenMwGraphics,
     OpenMwShaders,
+    /// `settings.cfg` `[Post Processing]`: post-processing shaders and their chain.
+    OpenMwPostProcessing,
+}
+
+impl SettingCategory {
+    /// The `settings.cfg` section of OpenMW categories.
+    pub fn openmw_section(self) -> Option<&'static str> {
+        match self {
+            SettingCategory::Tes3mpGameplay => None,
+            SettingCategory::OpenMwGraphics => Some("Graphics"),
+            SettingCategory::OpenMwShaders => Some("Shaders"),
+            SettingCategory::OpenMwPostProcessing => Some(POST_PROCESSING_SECTION),
+        }
+    }
+}
+
+pub const POST_PROCESSING_SECTION: &str = "Post Processing";
+/// Comma-separated post-processing shaders, in order (file names without `.omwfx`).
+pub const SHADER_CHAIN_KEY: &str = "chain";
+
+/// Where a TES3MP-NG global Lua script runs (`data/lua/scriptPolicy.json` of the server).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ScriptMode {
+    /// Every player's game runs its own copy, as in single player.
+    #[default]
+    Client,
+    /// One player's game, the Lua world authority, runs it for everyone.
+    Authority,
+}
+
+impl ScriptMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ScriptMode::Client => "client",
+            ScriptMode::Authority => "authority",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LuaScriptPolicy {
+    #[serde(default)]
+    pub default_mode: ScriptMode,
+    /// Modes of global scripts by path (`scripts/mod/world.lua`), as listed in `.omwscripts` files.
+    #[serde(default)]
+    pub scripts: BTreeMap<String, ScriptMode>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -56,6 +106,13 @@ pub struct InstanceSettings {
     /// Raw INI text (`[Section]` blocks) seeded into the client's `settings.cfg`.
     #[serde(default)]
     pub openmw_settings_cfg_overrides: String,
+    /// TES3MP-NG global Lua script modes, written to the server's `scriptPolicy.json`.
+    #[serde(default)]
+    pub lua_script_policy: LuaScriptPolicy,
+    /// Post-processing shader values (OpenMW's `shaders.yaml`), seeded into players' configs.
+    /// When unset, hosts share their own game's `shaders.yaml`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shaders_yaml: Option<String>,
 }
 
 impl Default for InstanceSettings {

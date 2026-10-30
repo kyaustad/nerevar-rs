@@ -139,6 +139,11 @@ pub fn build_manifest(
         .collect();
     let total_download_bytes = packages.iter().map(|package| package.total_size_bytes).sum();
 
+    // The instance's shader values, else the host's own game's
+    let client_files = crate::client_config::instance_client_files(
+        &instance_settings,
+        &tes3mp_config_dir(&tes3mp_dir),
+    );
     let manifest = NerevarManifest {
         version: MANIFEST_VERSION,
         instance_id: instance.id.clone(),
@@ -157,8 +162,7 @@ pub fn build_manifest(
         tes3mp_server_password: server_settings.password,
         required_data_files,
         instance_settings,
-        // The host's own shader settings and other files players get
-        client_files: crate::client_config::collect_client_files(&tes3mp_config_dir(&tes3mp_dir)),
+        client_files,
     };
 
     if let Some(emitter) = shared_progress.as_ref() {

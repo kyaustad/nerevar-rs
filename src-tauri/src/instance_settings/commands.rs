@@ -18,7 +18,9 @@ pub fn apply_instance_settings_to_disk(
     settings: &InstanceSettings,
 ) -> Result<(), String> {
     save_instance_settings(data_dir, settings)?;
-    write_tes3mp_game_settings(&instance_tes3mp_dir(instance_root), settings)?;
+    let tes3mp_dir = instance_tes3mp_dir(instance_root);
+    write_tes3mp_game_settings(&tes3mp_dir, settings)?;
+    super::write_script_policy(&tes3mp_dir, &settings.lua_script_policy)?;
     Ok(())
 }
 

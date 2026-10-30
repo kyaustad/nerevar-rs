@@ -190,6 +190,8 @@ pub fn launch_tes3mp_server(
     let tes3mp_dir = instance_tes3mp_dir(instance_root);
     let resolved = resolve_instance_openmw_config(data_dir)?;
     write_required_data_files_for_resolved(&tes3mp_dir, &resolved)?;
+    let settings = crate::instance_settings::load_instance_settings(data_dir)?;
+    crate::instance_settings::write_script_policy(&tes3mp_dir, &settings.lua_script_policy)?;
     let exe = find_executable(&tes3mp_dir, SERVER_EXE_NAMES, EXE_SEARCH_DEPTH).ok_or_else(|| {
         format!(
             "Could not find TES3MP server executable under {}",

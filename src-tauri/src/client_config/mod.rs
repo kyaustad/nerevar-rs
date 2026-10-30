@@ -21,6 +21,7 @@ use crate::openmw_ini_importer::{cfg_to_string, parse_cfg_contents, MultiStrMap}
 const OPENMW_CFG: &str = "openmw.cfg";
 const SETTINGS_CFG: &str = "settings.cfg";
 const SEEDED_DIR: &str = "seeded";
+const SHADERS_YAML: &str = "shaders.yaml";
 /// Keys that always follow the load order instead of being seeded.
 const MANAGED_KEYS: &[&str] = &["data", "content"];
 
@@ -63,6 +64,14 @@ pub fn write_instance_client_config(
     let resolved = crate::instance_data::resolve_instance_openmw_config(data_dir)?;
     let settings = crate::instance_settings::load_instance_settings(data_dir)?;
     let config_dir = crate::instance_setup::tes3mp_config_dir(tes3mp_dir);
+    // The host's own instances seed the shader values set in their settings
+    let own_files;
+    let files = if client_files.is_empty() {
+        own_files = settings_client_files(&settings);
+        own_files.as_slice()
+    } else {
+        client_files
+    };
     write_client_config(
         &config_dir,
         data_dir,
@@ -70,10 +79,31 @@ pub fn write_instance_client_config(
             base: &base,
             resolved: &resolved,
             settings: &settings,
-            files: client_files,
+            files,
         },
     )?;
     Ok(config_dir)
+}
+
+/// Files set in the instance's settings (its `shaders.yaml`).
+fn settings_client_files(settings: &InstanceSettings) -> Vec<ClientConfigFile> {
+    settings
+        .shaders_yaml
+        .as_ref()
+        .map(|contents| ClientConfigFile { name: SHADERS_YAML.to_string(), contents: contents.clone() })
+        .into_iter()
+        .collect()
+}
+
+/// The files a host shares: the instance's `shaders.yaml` when its settings have one, else the
+/// host's own game's files in `config_dir`.
+pub fn instance_client_files(settings: &InstanceSettings, config_dir: &Path) -> Vec<ClientConfigFile> {
+    let from_settings = settings_client_files(settings);
+    if from_settings.is_empty() {
+        collect_client_files(config_dir)
+    } else {
+        from_settings
+    }
 }
 
 /// The files of `config/` that synced clients get from this host.

@@ -9,11 +9,13 @@ mod github_getters;
 mod instance_data;
 mod instance_settings;
 mod instance_setup;
+mod lua_mods;
 mod mo2_plugin;
 mod nerevar_server;
 mod openmw_ini_importer;
 mod port_conflict;
 mod process_manager;
+mod shaders;
 mod sync_auth;
 mod sync_client;
 mod sync_host;
@@ -431,6 +433,8 @@ pub fn run() {
             instance_settings::commands::get_instance_setting_definitions,
             instance_settings::commands::get_instance_settings,
             instance_settings::commands::save_instance_settings_command,
+            lua_mods::commands::scan_instance_lua_mods,
+            shaders::scan_instance_shaders,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

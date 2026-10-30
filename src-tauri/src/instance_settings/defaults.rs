@@ -1,6 +1,6 @@
 use super::types::{
-    InstanceSettings, SettingCategory, SettingDefinition, SettingValue, SettingValueType,
-    Tes3mpGameSettingEntry, INSTANCE_SETTINGS_VERSION,
+    InstanceSettings, LuaScriptPolicy, SettingCategory, SettingDefinition, SettingValue,
+    SettingValueType, Tes3mpGameSettingEntry, INSTANCE_SETTINGS_VERSION, SHADER_CHAIN_KEY,
 };
 
 fn bool_def(
@@ -43,6 +43,25 @@ fn int_def(
     }
 }
 
+fn float_def(
+    key: &str,
+    category: SettingCategory,
+    label: &str,
+    description: &str,
+    default: f64,
+) -> SettingDefinition {
+    SettingDefinition {
+        key: key.to_string(),
+        category,
+        value_type: SettingValueType::Float,
+        label: label.to_string(),
+        description: description.to_string(),
+        default_value: SettingValue::Float(default),
+        min_integer: None,
+        max_integer: None,
+    }
+}
+
 fn string_def(
     key: &str,
     category: SettingCategory,
@@ -71,6 +90,7 @@ pub fn setting_definitions() -> Vec<SettingDefinition> {
     let tes3mp = SettingCategory::Tes3mpGameplay;
     let graphics = SettingCategory::OpenMwGraphics;
     let shaders = SettingCategory::OpenMwShaders;
+    let post_processing = SettingCategory::OpenMwPostProcessing;
 
     vec![
         // TES3MP-enforced gameplay (OpenMW Game category)
@@ -288,6 +308,35 @@ pub fn setting_definitions() -> Vec<SettingDefinition> {
             "Enable MSAA anti-aliasing.",
             false,
         ),
+        // Post-processing (OpenMW defaults); the chain has its own editor
+        bool_def(
+            "enabled",
+            post_processing,
+            "Post-processing",
+            "Render the shader chain below. Players can still turn it off for performance.",
+            false,
+        ),
+        string_def(
+            SHADER_CHAIN_KEY,
+            post_processing,
+            "Shader chain",
+            "Post-processing shaders, in order: file names without .omwfx, separated by commas.",
+            "",
+        ),
+        float_def(
+            "auto exposure speed",
+            post_processing,
+            "Auto exposure speed",
+            "How fast eye adaptation follows scene brightness. Only used by HDR shaders.",
+            0.9,
+        ),
+        bool_def(
+            "transparent postpass",
+            post_processing,
+            "Transparent postpass",
+            "Re-render transparent objects so shaders that use depth (fog, depth of field) treat them correctly.",
+            true,
+        ),
     ]
 }
 
@@ -307,17 +356,13 @@ pub fn default_instance_settings() -> InstanceSettings {
                     value: definition.default_value.clone(),
                 });
             }
-            SettingCategory::OpenMwGraphics => {
-                openmw_settings
-                    .entry("Graphics".to_string())
-                    .or_default()
-                    .insert(definition.key.clone(), definition.default_value.clone());
-            }
-            SettingCategory::OpenMwShaders => {
-                openmw_settings
-                    .entry("Shaders".to_string())
-                    .or_default()
-                    .insert(definition.key.clone(), definition.default_value.clone());
+            category => {
+                if let Some(section) = category.openmw_section() {
+                    openmw_settings
+                        .entry(section.to_string())
+                        .or_default()
+                        .insert(definition.key.clone(), definition.default_value.clone());
+                }
             }
         }
     }
@@ -328,6 +373,8 @@ pub fn default_instance_settings() -> InstanceSettings {
         openmw_settings,
         openmw_cfg_overrides: Vec::new(),
         openmw_settings_cfg_overrides: String::new(),
+        lua_script_policy: LuaScriptPolicy::default(),
+        shaders_yaml: None,
     }
 }
 

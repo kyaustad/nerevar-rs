@@ -5,6 +5,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectItemText,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -207,7 +208,7 @@ export function PostProcessingSection({
               Shader chain
             </Label>
             <p className="font-serif text-sm text-foreground/65">
-              Applied top to bottom. {chainDefinition.description}
+              Applied top to bottom, when post-processing is on.
             </p>
           </div>
 
@@ -310,7 +311,7 @@ export function PostProcessingSection({
               <SelectContent position="popper" className="max-h-72">
                 {addable.map((shader) => (
                   <SelectItem key={shader.path} value={shader.name}>
-                    {shader.name}{" "}
+                    <SelectItemText>{shader.name}</SelectItemText>
                     <span className="text-foreground/50">
                       ({shader.source})
                     </span>

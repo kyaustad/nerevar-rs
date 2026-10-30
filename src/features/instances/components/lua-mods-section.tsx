@@ -4,6 +4,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectItemText,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -154,10 +155,16 @@ function GlobalScriptRow({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="default">
-              Default ({MODE_LABEL[defaultMode].toLowerCase()})
+              <SelectItemText>
+                Default ({MODE_LABEL[defaultMode].toLowerCase()})
+              </SelectItemText>
             </SelectItem>
-            <SelectItem value="client">Client</SelectItem>
-            <SelectItem value="authority">Authority</SelectItem>
+            <SelectItem value="client">
+              <SelectItemText>Client</SelectItemText>
+            </SelectItem>
+            <SelectItem value="authority">
+              <SelectItemText>Authority</SelectItemText>
+            </SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -361,8 +368,12 @@ export function LuaModsSection({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="client">Client</SelectItem>
-            <SelectItem value="authority">Authority</SelectItem>
+            <SelectItem value="client">
+              <SelectItemText>Client</SelectItemText>
+            </SelectItem>
+            <SelectItem value="authority">
+              <SelectItemText>Authority</SelectItemText>
+            </SelectItem>
           </SelectContent>
         </Select>
       </div>

@@ -292,7 +292,7 @@ export function InstanceServerSettingsManager({
 
         <CardContent className="px-6 py-5">
           <Tabs defaultValue="gameplay" className="gap-4">
-            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 bg-input/30 p-1 sm:grid-cols-3 lg:grid-cols-6">
+            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 bg-input/30 p-1 group-data-horizontal/tabs:h-auto sm:grid-cols-3 lg:grid-cols-6">
               <TabsTrigger value="gameplay">Gameplay</TabsTrigger>
               <TabsTrigger value="graphics">Graphics</TabsTrigger>
               <TabsTrigger value="shaders">Shaders</TabsTrigger>

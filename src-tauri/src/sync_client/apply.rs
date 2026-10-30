@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::instance_data::{
     load_load_order, save_load_order, LoadOrder, LoadOrderEntry, NerevarManifest, LOAD_ORDER_VERSION,
 };
-use crate::openmw_ini_importer::read_first_global_data_path;
+use crate::openmw_ini_importer::read_base_data_path;
 
 pub fn apply_manifest_to_load_order(
     data_dir: &Path,
@@ -17,7 +17,7 @@ pub fn apply_manifest_to_load_order(
         .and_then(|lo| lo.base_game_data)
         .filter(|p| !p.trim().is_empty());
     let base_game_data = existing_base
-        .or_else(read_first_global_data_path)
+        .or_else(read_base_data_path)
         .or(manifest.base_game_data.clone());
 
     let load_order = LoadOrder {

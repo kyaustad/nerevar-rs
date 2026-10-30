@@ -7,10 +7,10 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::data::InstanceConfig;
 use crate::instance_data::{
-    find_instance_by_id, load_load_order, load_manifest, manifest_path, manifests_differ,
-    resolve_package_data_dir, resolve_synced_load_order, validate_manifest_against_disk,
-    write_instance_launch_cfg, ManifestValidationResult, NerevarManifest, ResolvedOpenMwConfig,
+    find_instance_by_id, load_manifest, manifest_path, manifests_differ, resolve_package_data_dir,
+    validate_manifest_against_disk, ManifestValidationResult, NerevarManifest,
 };
+use crate::instance_setup::instance_tes3mp_dir;
 use crate::AppState;
 
 use super::apply::apply_manifest_to_load_order;
@@ -156,7 +156,7 @@ async fn sync_if_needed_inner(
             None,
         );
         let local = load_manifest(data_dir)?;
-        finalize_after_sync(instance, data_dir, &local)?;
+        finalize_after_sync(instance, data_dir, &local).await?;
         return Ok(ManifestValidationResult {
             valid: true,
             issues: Vec::new(),
@@ -313,7 +313,7 @@ async fn sync_if_needed_inner(
         return Ok(validation);
     }
 
-    finalize_after_sync(instance, data_dir, &remote)?;
+    finalize_after_sync(instance, data_dir, &remote).await?;
     emit_sync_progress(
         &app,
         instance_id,
@@ -328,23 +328,41 @@ async fn sync_if_needed_inner(
     Ok(validation)
 }
 
-fn finalize_after_sync(
+async fn finalize_after_sync(
     instance: &InstanceConfig,
     data_dir: &Path,
     manifest: &NerevarManifest,
 ) -> Result<(), String> {
     apply_manifest_to_load_order(data_dir, manifest)?;
-    let load_order = load_load_order(data_dir)?;
-    let resolved: ResolvedOpenMwConfig =
-        resolve_synced_load_order(data_dir, &load_order, manifest)?;
-    write_instance_launch_cfg(
-        data_dir,
-        &resolved,
-        &manifest.instance_settings.openmw_cfg_overrides,
-    )?;
+    ensure_host_release(instance, manifest).await?;
     write_synced_client_connection(instance, manifest)?;
     crate::instance_settings::persist_settings_from_manifest(data_dir, &manifest.instance_settings)?;
+    crate::client_config::write_instance_client_config(
+        &instance_tes3mp_dir(Path::new(&instance.path)),
+        data_dir,
+        &manifest.client_files,
+    )?;
     Ok(())
+}
+
+/// TES3MP-NG clients only connect to servers of the same build: install the host's release when it
+/// changed. The install's config/ and userdata/ are kept.
+async fn ensure_host_release(
+    instance: &InstanceConfig,
+    manifest: &NerevarManifest,
+) -> Result<(), String> {
+    let Some(tag) = manifest.tes3mp_release_tag.as_deref() else {
+        return Ok(());
+    };
+    let tes3mp_dir = instance_tes3mp_dir(Path::new(&instance.path));
+    if crate::github_getters::read_installed_release(&tes3mp_dir)
+        .is_some_and(|installed| installed.tag == tag)
+    {
+        return Ok(());
+    }
+    tauri_plugin_log::log::info!("The host runs TES3MP-NG {tag}; updating {}", tes3mp_dir.display());
+    let release = crate::github_getters::find_release_by_tag(tag).await?;
+    crate::github_getters::install_release(&release, &tes3mp_dir).await
 }
 
 pub fn touch_last_synced(instance: &mut InstanceConfig, manifest: &NerevarManifest) {

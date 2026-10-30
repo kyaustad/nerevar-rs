@@ -57,6 +57,12 @@ pub struct InstanceSyncStatus {
 pub struct RemoteManifestSummary {
     pub instance_id: String,
     pub instance_name: String,
+    #[serde(default)]
+    pub instance_description: String,
+    /// The host's TES3MP-NG release tag, which the new instance installs. None from hosts running an
+    /// older Nerevar.
+    #[serde(default)]
+    pub tes3mp_release_tag: Option<String>,
     pub total_download_bytes: u64,
     pub package_count: u32,
     pub tes3mp_server_port: u16,

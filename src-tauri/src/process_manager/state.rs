@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Emitter};
 
-use crate::openmw_ini_importer::GlobalOpenMwLaunchSession;
 use crate::sync_client::types::ProcessStatusEvent;
 
 use super::types::ProcessRole;
@@ -17,44 +16,12 @@ pub struct ManagedProcess {
 
 pub struct ProcessManager {
     processes: Mutex<HashMap<String, ManagedProcess>>,
-    global_openmw_session: Mutex<Option<GlobalOpenMwLaunchSession>>,
 }
 
 impl ProcessManager {
     pub fn new() -> Self {
         Self {
             processes: Mutex::new(HashMap::new()),
-            global_openmw_session: Mutex::new(None),
-        }
-    }
-
-    pub fn store_global_openmw_session(
-        &self,
-        session: GlobalOpenMwLaunchSession,
-    ) -> Result<(), String> {
-        let mut guard = self
-            .global_openmw_session
-            .lock()
-            .map_err(|_| "Process manager lock poisoned".to_string())?;
-        if guard.is_some() {
-            return Err("Global OpenMW config is already swapped for launch".to_string());
-        }
-        *guard = Some(session);
-        Ok(())
-    }
-
-    pub fn restore_global_openmw_session_if_any(&self) {
-        let session = self
-            .global_openmw_session
-            .lock()
-            .ok()
-            .and_then(|mut guard| guard.take());
-        if let Some(session) = session {
-            if let Err(err) = crate::openmw_ini_importer::restore_global_openmw_launch(session) {
-                tauri_plugin_log::log::error!(
-                    "Failed to restore global OpenMW config after TES3MP launch: {err}"
-                );
-            }
         }
     }
 
@@ -160,9 +127,6 @@ impl ProcessManager {
 
         let instance_id = instance_id.to_string();
         let role_str = role.as_str().to_string();
-        if role == ProcessRole::Client {
-            self.restore_global_openmw_session_if_any();
-        }
         stop_child_in_background(
             child_arc,
             app.map(|handle| (handle, instance_id, role_str)),
@@ -283,9 +247,6 @@ pub fn spawn_exit_watcher(
         };
 
         manager.remove(&instance_id, role);
-        if role == ProcessRole::Client {
-            manager.restore_global_openmw_session_if_any();
-        }
         let _ = app.emit(
             "process-status",
             ProcessStatusEvent {

@@ -1,5 +1,6 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod app_update;
+mod client_config;
 mod config;
 mod connection;
 mod data;
@@ -26,7 +27,7 @@ use crate::process_manager::ProcessManager;
 use crate::sync_client::SyncCoordinator;
 use crate::sync_host::{new_shared_hosting_manifest_cache, new_shared_sync_host};
 use std::sync::{Arc, Mutex};
-use tauri::{Manager, RunEvent};
+use tauri::Manager;
 use tauri::State;
 use tokio::sync::watch;
 
@@ -433,11 +434,5 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
-        .run(|app_handle, event| {
-            if matches!(event, RunEvent::Exit | RunEvent::ExitRequested { .. }) {
-                if let Some(manager) = app_handle.try_state::<Arc<ProcessManager>>() {
-                    manager.restore_global_openmw_session_if_any();
-                }
-            }
-        });
+        .run(|_app_handle, _event| {});
 }

@@ -50,10 +50,10 @@ pub struct InstanceSettings {
     pub tes3mp_game_settings: Vec<Tes3mpGameSettingEntry>,
     #[serde(default)]
     pub openmw_settings: BTreeMap<String, BTreeMap<String, SettingValue>>,
-    /// Extra `key=value` lines appended to `openmw.launch.cfg` (e.g. `groundcover=SomeMod.esp`).
+    /// Extra `key=value` lines seeded into the client's `openmw.cfg` (e.g. `groundcover=SomeMod.esp`).
     #[serde(default)]
     pub openmw_cfg_overrides: Vec<String>,
-    /// Raw INI text appended to the `settings.cfg` launch overlay (`[Section]` blocks).
+    /// Raw INI text (`[Section]` blocks) seeded into the client's `settings.cfg`.
     #[serde(default)]
     pub openmw_settings_cfg_overrides: String,
 }

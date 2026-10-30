@@ -28,47 +28,8 @@ pub fn format_settings_overlay(settings: &InstanceSettings) -> String {
     out
 }
 
-pub fn merge_settings_overlay(base: &str, overlay: &str) -> String {
-    let mut base_sections = parse_settings_cfg(base);
-    let overlay_sections = parse_settings_cfg(overlay);
-
-    for (section, entries) in overlay_sections {
-        let target = base_sections.entry(section).or_default();
-        for (key, value) in entries {
-            target.insert(key, value);
-        }
-    }
-
-    render_settings_cfg(&base_sections)
-}
-
-pub fn merge_user_session_changes(
-    before_launch: &str,
-    after_session: &str,
-    overlay: &str,
-) -> String {
-    let mut restored = parse_settings_cfg(before_launch);
-    let session = parse_settings_cfg(after_session);
-    let managed = parse_settings_cfg(overlay);
-
-    for (section, entries) in session {
-        let target = restored.entry(section.clone()).or_default();
-        let managed_section = managed.get(&section);
-        for (key, value) in entries {
-            let managed_key = managed_section
-                .and_then(|keys| keys.get(&key))
-                .is_some();
-            if managed_key {
-                continue;
-            }
-            target.insert(key, value);
-        }
-    }
-
-    render_settings_cfg(&restored)
-}
-
-fn parse_settings_cfg(contents: &str) -> BTreeMap<String, BTreeMap<String, String>> {
+/// Sections of a `settings.cfg`, with their `key = value` settings.
+pub fn parse_settings_cfg(contents: &str) -> BTreeMap<String, BTreeMap<String, String>> {
     let mut sections: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
     let mut current = String::from("default");
 
@@ -94,7 +55,7 @@ fn parse_settings_cfg(contents: &str) -> BTreeMap<String, BTreeMap<String, Strin
     sections
 }
 
-fn render_settings_cfg(sections: &BTreeMap<String, BTreeMap<String, String>>) -> String {
+pub fn render_settings_cfg(sections: &BTreeMap<String, BTreeMap<String, String>>) -> String {
     let mut out = String::from("# Nerevar active OpenMW settings (managed during TES3MP launch)\n");
     for (section, entries) in sections {
         if entries.is_empty() {
@@ -114,15 +75,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn overlay_replaces_section_keys() {
-        let base = "[Shaders]\nauto use object normal maps = false\nforce shaders = false\n";
-        let overlay = "[Shaders]\nauto use object normal maps = true\n";
-        let merged = merge_settings_overlay(base, overlay);
-        assert!(merged.contains("auto use object normal maps = true"));
-        assert!(merged.contains("force shaders = false"));
-    }
-
-    #[test]
     fn format_settings_overlay_appends_manual_block() {
         use crate::instance_settings::InstanceSettings;
 
@@ -136,15 +88,5 @@ mod tests {
         let overlay = format_settings_overlay(&settings);
         assert!(overlay.contains("[Cells]"));
         assert!(overlay.contains("viewing distance = 7168"));
-    }
-
-    #[test]
-    fn merge_user_session_changes_keeps_unmanaged_and_skips_managed() {
-        let before = "[GUI]\nsubtitles = false\n\n[Shaders]\nforce shaders = false\n";
-        let after = "[GUI]\nsubtitles = true\n\n[Shaders]\nforce shaders = true\n";
-        let overlay = "[Shaders]\nforce shaders = true\n";
-        let merged = merge_user_session_changes(before, after, overlay);
-        assert!(merged.contains("subtitles = true"));
-        assert!(merged.contains("force shaders = false"));
     }
 }

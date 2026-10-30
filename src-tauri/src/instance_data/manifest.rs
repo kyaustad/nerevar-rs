@@ -13,13 +13,12 @@ use super::types::{
     ManifestValidationResult, NerevarManifest, MANIFEST_VERSION,
 };
 
+use crate::data::InstanceConfig;
 use crate::instance_setup::{
     build_required_data_files, instance_tes3mp_dir, read_tes3mp_server_settings,
-    write_required_data_files,
+    tes3mp_config_dir, write_required_data_files,
 };
-use crate::instance_settings::{
-    apply_instance_settings_to_disk, load_instance_settings, write_launch_settings_overlay,
-};
+use crate::instance_settings::{apply_instance_settings_to_disk, load_instance_settings};
 
 struct PackageWorkItem {
     index: usize,
@@ -27,13 +26,13 @@ struct PackageWorkItem {
 }
 
 pub fn build_manifest(
-    instance_id: &str,
-    instance_name: &str,
-    instance_root: &Path,
+    instance: &InstanceConfig,
     data_dir: &Path,
     load_order: &LoadOrder,
     progress: &mut Option<ProgressEmitter>,
 ) -> Result<NerevarManifest, String> {
+    let instance_root = Path::new(&instance.path);
+    let tes3mp_dir = instance_tes3mp_dir(instance_root);
     let shared_progress = progress.take().map(|emitter| Arc::new(Mutex::new(emitter)));
 
     if let Some(emitter) = shared_progress.as_ref() {
@@ -64,14 +63,11 @@ pub fn build_manifest(
         }
     }
 
-    let server_settings = read_tes3mp_server_settings(&instance_tes3mp_dir(instance_root))?;
+    let server_settings = read_tes3mp_server_settings(&tes3mp_dir)?;
     let instance_settings = load_instance_settings(data_dir)?;
     apply_instance_settings_to_disk(instance_root, data_dir, &instance_settings)?;
     let required_data_files = build_required_data_files(&resolved)?;
-    write_required_data_files(
-        &instance_tes3mp_dir(instance_root),
-        &required_data_files,
-    )?;
+    write_required_data_files(&tes3mp_dir, &required_data_files)?;
 
     let mut enabled_entries: Vec<_> = load_order.entries.iter().filter(|e| e.enabled).collect();
     enabled_entries.sort_by_key(|e| e.priority);
@@ -145,17 +141,24 @@ pub fn build_manifest(
 
     let manifest = NerevarManifest {
         version: MANIFEST_VERSION,
-        instance_id: instance_id.to_string(),
-        instance_name: instance_name.to_string(),
+        instance_id: instance.id.clone(),
+        instance_name: instance.name.clone(),
+        instance_description: instance.description.clone(),
+        tes3mp_release_tag: crate::github_getters::read_installed_release(&tes3mp_dir)
+            .map(|release| release.tag)
+            .or_else(|| instance.release_tag.clone()),
         generated_at: Utc::now().to_rfc3339(),
         base_game_data: load_order.base_game_data.clone(),
         packages,
         resolved,
         total_download_bytes,
         tes3mp_server_port: server_settings.port,
+        tes3mp_server_address: None,
         tes3mp_server_password: server_settings.password,
         required_data_files,
         instance_settings,
+        // The host's own shader settings and other files players get
+        client_files: crate::client_config::collect_client_files(&tes3mp_config_dir(&tes3mp_dir)),
     };
 
     if let Some(emitter) = shared_progress.as_ref() {

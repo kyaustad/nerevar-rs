@@ -125,10 +125,13 @@ fn to_update_release(release: &GithubReleaseResponse) -> Result<AppUpdateRelease
     Ok(AppUpdateRelease {
         id: release.id,
         tag_name: release.tag_name.clone(),
-        name: release.name.clone(),
+        name: release.name.clone().unwrap_or_else(|| release.tag_name.clone()),
         version,
-        body: release.body.clone(),
-        published_at: release.published_at.clone(),
+        body: release.body.clone().unwrap_or_default(),
+        published_at: release
+            .published_at
+            .clone()
+            .unwrap_or_else(|| release.created_at.clone()),
         html_url: release.html_url.clone(),
         installer_asset_name: asset.name.clone(),
         installer_download_url: asset.browser_download_url.clone(),
@@ -153,7 +156,8 @@ fn find_installer_asset(release: &GithubReleaseResponse) -> Option<&GithubAssetR
 }
 
 fn release_version(release: &GithubReleaseResponse) -> Option<String> {
-    parse_semver_from_tag(&release.tag_name).or_else(|| parse_semver_from_name(&release.name))
+    parse_semver_from_tag(&release.tag_name)
+        .or_else(|| release.name.as_deref().and_then(parse_semver_from_name))
 }
 
 fn parse_semver_from_tag(tag: &str) -> Option<String> {

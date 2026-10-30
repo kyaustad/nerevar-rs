@@ -36,7 +36,7 @@ pub fn scan_and_merge_load_order(
     }
 
     if load_order.base_game_data.is_none() {
-        load_order.base_game_data = openmw_ini_importer::read_first_global_data_path();
+        load_order.base_game_data = openmw_ini_importer::read_base_data_path();
     }
 
     let scanned = scan_data_directory(data_dir, progress)?;

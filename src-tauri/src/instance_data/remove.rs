@@ -5,11 +5,10 @@ use super::manifest::build_manifest;
 use super::paths::{manifest_path, package_abs_path};
 use super::scan::should_skip_package_dir;
 use super::types::LoadOrder;
+use crate::data::InstanceConfig;
 
 pub fn delete_package(
-    instance_id: &str,
-    instance_name: &str,
-    instance_root: &Path,
+    instance: &InstanceConfig,
     data_dir: &Path,
     entry_id: &str,
 ) -> Result<LoadOrder, String> {
@@ -47,9 +46,7 @@ pub fn delete_package(
     if manifest_path(data_dir).exists() {
         let mut no_progress = None;
         build_manifest(
-            instance_id,
-            instance_name,
-            instance_root,
+            instance,
             data_dir,
             &load_order,
             &mut no_progress,
@@ -137,7 +134,21 @@ mod tests {
             }],
         );
 
-        let load_order = delete_package("inst-1", "Test", &root, &data_dir, "entry-1").unwrap();
+        let instance = InstanceConfig {
+            id: "inst-1".into(),
+            name: "Test".into(),
+            description: String::new(),
+            path: root.to_string_lossy().into_owned(),
+            data_dir: data_dir.to_string_lossy().into_owned(),
+            release_id: None,
+            release_tag: None,
+            remote_host: None,
+            remote_sync_port: None,
+            last_synced_at: None,
+            tes3mp_server_port: None,
+            sync_password: None,
+        };
+        let load_order = delete_package(&instance, &data_dir, "entry-1").unwrap();
         assert!(load_order.entries.is_empty());
         assert!(!package_dir.exists());
 

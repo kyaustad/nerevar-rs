@@ -1,14 +1,29 @@
+//! TES3MP-NG's client and server settings.
+//!
+//! TES3MP-NG installs are portable: `tes3mp-*-default.cfg` next to the executables come with the
+//! release, and the install's own `config/tes3mp-*.cfg` override them. Nerevar only writes the
+//! values it manages into the `config/` files, so the defaults stay untouched by release updates and
+//! players' other settings (chat, log level...) are kept.
+
 use std::path::{Path, PathBuf};
 
 use crate::data::NewInstanceConfig;
 use tauri_plugin_log::log::info;
 
-const SERVER_DEFAULTS_CFG: &str = "tes3mp-server-default.cfg";
-const CLIENT_DEFAULTS_CFG: &str = "tes3mp-client-default.cfg";
+use super::ini::{get_value, set_values};
+
+const SERVER_CFG: &str = "tes3mp-server";
+const CLIENT_CFG: &str = "tes3mp-client";
 pub const INSTANCE_TES3MP_DIR: &str = "tes3mp";
+/// The portable install's config folder (`openmw.cfg`, `settings.cfg`, `tes3mp-*.cfg`, logs).
+pub const TES3MP_CONFIG_DIR: &str = "config";
 
 pub fn instance_tes3mp_dir(instance_root: &Path) -> PathBuf {
     instance_root.join(INSTANCE_TES3MP_DIR)
+}
+
+pub fn tes3mp_config_dir(tes3mp_dir: &Path) -> PathBuf {
+    tes3mp_dir.join(TES3MP_CONFIG_DIR)
 }
 
 pub fn create_instance_data_dir(instance_data_dir: &Path) -> Result<(), String> {
@@ -29,20 +44,70 @@ pub fn create_instance_data_dir(instance_data_dir: &Path) -> Result<(), String> 
     Ok(())
 }
 
+/// A TES3MP config: the release's `<name>-default.cfg` with the install's `config/<name>.cfg`.
+struct Tes3mpCfg {
+    default: PathBuf,
+    user: PathBuf,
+}
+
+impl Tes3mpCfg {
+    fn new(tes3mp_dir: &Path, name: &str) -> Self {
+        Self {
+            default: tes3mp_dir.join(format!("{name}-default.cfg")),
+            user: tes3mp_config_dir(tes3mp_dir).join(format!("{name}.cfg")),
+        }
+    }
+
+    fn read(path: &Path) -> Result<String, String> {
+        if !path.is_file() {
+            return Ok(String::new());
+        }
+        std::fs::read_to_string(path).map_err(|e| format!("Failed to read {}: {e}", path.display()))
+    }
+
+    /// The effective value: the install's own setting, else the release default.
+    fn get(&self, section: &str, key: &str) -> Result<Option<String>, String> {
+        if !self.default.is_file() {
+            return Err(format!(
+                "{} not found: is TES3MP-NG installed?",
+                self.default.display()
+            ));
+        }
+        if let Some(value) = get_value(&Self::read(&self.user)?, section, key) {
+            return Ok(Some(value));
+        }
+        Ok(get_value(&Self::read(&self.default)?, section, key))
+    }
+
+    fn set(&self, updates: &[(&str, &str, String)]) -> Result<PathBuf, String> {
+        if let Some(parent) = self.user.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
+        }
+        let updated = set_values(&Self::read(&self.user)?, updates);
+        std::fs::write(&self.user, updated)
+            .map_err(|e| format!("Failed to write {}: {e}", self.user.display()))?;
+        Ok(self.user.clone())
+    }
+}
+
 pub fn apply_server_defaults(
     tes3mp_dir: &Path,
     settings: &NewInstanceConfig,
 ) -> Result<(), String> {
-    let cfg_path = find_server_defaults_cfg(tes3mp_dir)?;
-    info!("Applying server defaults to {}", cfg_path.display());
-
-    let contents = std::fs::read_to_string(&cfg_path)
-        .map_err(|e| format!("Failed to read {}: {e}", cfg_path.display()))?;
-
-    let updated = patch_server_defaults_cfg(&contents, settings);
-
-    std::fs::write(&cfg_path, updated)
-        .map_err(|e| format!("Failed to write {}: {e}", cfg_path.display()))?;
+    let server = Tes3mpCfg::new(tes3mp_dir, SERVER_CFG);
+    info!("Applying server settings to {}", server.user.display());
+    server.set(&[
+        ("General", "hostname", settings.server_host_name.clone()),
+        ("General", "maximumPlayers", settings.max_players.to_string()),
+        ("General", "port", settings.server_port.to_string()),
+        ("General", "password", settings.password.clone()),
+        (
+            "MasterServer",
+            "enabled",
+            settings.master_server_enabled.to_string(),
+        ),
+    ])?;
 
     write_tes3mp_client_connection(
         tes3mp_dir,
@@ -52,114 +117,6 @@ pub fn apply_server_defaults(
     )?;
 
     Ok(())
-}
-
-fn find_server_defaults_cfg(tes3mp_dir: &Path) -> Result<PathBuf, String> {
-    let direct = tes3mp_dir.join(SERVER_DEFAULTS_CFG);
-    if direct.is_file() {
-        return Ok(direct);
-    }
-
-    find_file_by_name(tes3mp_dir, SERVER_DEFAULTS_CFG, 4).ok_or_else(|| {
-        format!(
-            "Could not find {SERVER_DEFAULTS_CFG} under {}",
-            tes3mp_dir.display()
-        )
-    })
-}
-
-fn find_file_by_name(dir: &Path, file_name: &str, max_depth: u32) -> Option<PathBuf> {
-    if max_depth == 0 {
-        return None;
-    }
-
-    let entries = std::fs::read_dir(dir).ok()?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() && path.file_name().and_then(|n| n.to_str()) == Some(file_name) {
-            return Some(path);
-        }
-        if path.is_dir() {
-            if let Some(found) = find_file_by_name(&path, file_name, max_depth - 1) {
-                return Some(found);
-            }
-        }
-    }
-
-    None
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum CfgSection {
-    None,
-    General,
-    Plugins,
-    MasterServer,
-}
-
-fn parse_cfg_section(line: &str) -> Option<CfgSection> {
-    match line.trim() {
-        "[General]" => Some(CfgSection::General),
-        "[Plugins]" => Some(CfgSection::Plugins),
-        "[MasterServer]" => Some(CfgSection::MasterServer),
-        _ => None,
-    }
-}
-
-fn setting_key(line: &str) -> Option<&str> {
-    let line = line.split('#').next()?.trim();
-    if line.starts_with('[') {
-        return None;
-    }
-    let (key, _) = line.split_once('=')?;
-    let key = key.trim();
-    if key.is_empty() {
-        None
-    } else {
-        Some(key)
-    }
-}
-
-fn patch_server_defaults_cfg(contents: &str, settings: &NewInstanceConfig) -> String {
-    let mut section = CfgSection::None;
-    let mut lines: Vec<String> = Vec::new();
-
-    for line in contents.lines() {
-        if let Some(next) = parse_cfg_section(line) {
-            section = next;
-            lines.push(line.to_string());
-            continue;
-        }
-
-        let Some(key) = setting_key(line) else {
-            lines.push(line.to_string());
-            continue;
-        };
-
-        let patched = match (section, key) {
-            (CfgSection::General, "hostname") => {
-                Some(format!("hostname = {}", settings.server_host_name))
-            }
-            (CfgSection::General, "maximumPlayers" | "players") => {
-                Some(format!("maximumPlayers = {}", settings.max_players))
-            }
-            (CfgSection::General, "port") => Some(format!("port = {}", settings.server_port)),
-            (CfgSection::General, "password") => Some(format!("password = {}", settings.password)),
-            (CfgSection::MasterServer, "enabled") => Some(format!(
-                "enabled = {}",
-                if settings.master_server_enabled {
-                    "true"
-                } else {
-                    "false"
-                }
-            )),
-            _ => None,
-        };
-
-        lines.push(patched.unwrap_or_else(|| line.to_string()));
-    }
-
-    lines.join("\n")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -176,111 +133,30 @@ pub struct Tes3mpClientSettings {
     pub password: String,
 }
 
-pub fn read_tes3mp_server_settings(tes3mp_dir: &Path) -> Result<Tes3mpServerSettings, String> {
-    let cfg_path = find_server_defaults_cfg(tes3mp_dir)?;
-    let contents = std::fs::read_to_string(&cfg_path)
-        .map_err(|e| format!("Failed to read {}: {e}", cfg_path.display()))?;
-    parse_server_general_settings(&contents)
+fn parse_port(value: Option<String>, what: &str) -> Result<u16, String> {
+    let value = value.ok_or_else(|| format!("Could not find the {what} port"))?;
+    value
+        .parse()
+        .map_err(|_| format!("Invalid {what} port: {value}"))
 }
 
-fn parse_server_general_settings(contents: &str) -> Result<Tes3mpServerSettings, String> {
-    let mut section = CfgSection::None;
-    let mut hostname = String::new();
-    let mut port: Option<u16> = None;
-    let mut password = String::new();
-
-    for line in contents.lines() {
-        if let Some(next) = parse_cfg_section(line) {
-            section = next;
-            continue;
-        }
-        let Some(key) = setting_key(line) else {
-            continue;
-        };
-        if section != CfgSection::General {
-            continue;
-        }
-        let value = line
-            .split('#')
-            .next()
-            .and_then(|l| l.split_once('='))
-            .map(|(_, v)| v.trim())
-            .unwrap_or("");
-
-        match key {
-            "hostname" => hostname = value.to_string(),
-            "port" => {
-                port = Some(
-                    value
-                        .parse()
-                        .map_err(|_| format!("Invalid TES3MP server port: {value}"))?,
-                );
-            }
-            "password" => password = value.to_string(),
-            _ => {}
-        }
-    }
-
+pub fn read_tes3mp_server_settings(tes3mp_dir: &Path) -> Result<Tes3mpServerSettings, String> {
+    let server = Tes3mpCfg::new(tes3mp_dir, SERVER_CFG);
     Ok(Tes3mpServerSettings {
-        hostname,
-        port: port.ok_or_else(|| {
-            "Could not find General/port in tes3mp-server-default.cfg".to_string()
-        })?,
-        password,
+        hostname: server.get("General", "hostname")?.unwrap_or_default(),
+        port: parse_port(server.get("General", "port")?, "TES3MP server")?,
+        password: server.get("General", "password")?.unwrap_or_default(),
     })
 }
 
 pub fn read_tes3mp_client_settings(tes3mp_dir: &Path) -> Result<Tes3mpClientSettings, String> {
-    let cfg_path = find_client_defaults_cfg(tes3mp_dir)?;
-    let contents = std::fs::read_to_string(&cfg_path)
-        .map_err(|e| format!("Failed to read {}: {e}", cfg_path.display()))?;
-    parse_client_general_settings(&contents)
-}
-
-fn parse_client_general_settings(contents: &str) -> Result<Tes3mpClientSettings, String> {
-    let mut section = CfgSection::None;
-    let mut destination_address = String::new();
-    let mut port: Option<u16> = None;
-    let mut password = String::new();
-
-    for line in contents.lines() {
-        if let Some(next) = parse_cfg_section(line) {
-            section = next;
-            continue;
-        }
-        let Some(key) = setting_key(line) else {
-            continue;
-        };
-        if section != CfgSection::General {
-            continue;
-        }
-        let value = line
-            .split('#')
-            .next()
-            .and_then(|l| l.split_once('='))
-            .map(|(_, v)| v.trim())
-            .unwrap_or("");
-
-        match key {
-            "destinationAddress" => destination_address = value.to_string(),
-            "port" => {
-                port = Some(
-                    value
-                        .parse()
-                        .map_err(|_| format!("Invalid TES3MP client port: {value}"))?,
-                );
-            }
-            "password" => password = value.to_string(),
-            _ => {}
-        }
-    }
-
+    let client = Tes3mpCfg::new(tes3mp_dir, CLIENT_CFG);
     Ok(Tes3mpClientSettings {
-        destination_address,
-        port: port.ok_or_else(|| {
-            "Could not find General/port in tes3mp-client-default.cfg".to_string()
-        })?,
-        password,
+        destination_address: client
+            .get("General", "destinationAddress")?
+            .unwrap_or_default(),
+        port: parse_port(client.get("General", "port")?, "TES3MP client")?,
+        password: client.get("General", "password")?.unwrap_or_default(),
     })
 }
 
@@ -290,124 +166,29 @@ pub fn update_server_connection_settings(
     port: u16,
     password: &str,
 ) -> Result<(), String> {
-    let cfg_path = find_server_defaults_cfg(tes3mp_dir)?;
-    let contents = std::fs::read_to_string(&cfg_path)
-        .map_err(|e| format!("Failed to read {}: {e}", cfg_path.display()))?;
-    let updated = patch_server_connection_settings(&contents, hostname, port, password);
-    std::fs::write(&cfg_path, updated)
-        .map_err(|e| format!("Failed to write {}: {e}", cfg_path.display()))?;
+    Tes3mpCfg::new(tes3mp_dir, SERVER_CFG).set(&[
+        ("General", "hostname", hostname.to_string()),
+        ("General", "port", port.to_string()),
+        ("General", "password", password.to_string()),
+    ])?;
     Ok(())
 }
 
-fn patch_server_connection_settings(
-    contents: &str,
-    hostname: &str,
-    port: u16,
-    password: &str,
-) -> String {
-    let mut section = CfgSection::None;
-    let mut lines: Vec<String> = Vec::new();
-
-    for line in contents.lines() {
-        if let Some(next) = parse_cfg_section(line) {
-            section = next;
-            lines.push(line.to_string());
-            continue;
-        }
-
-        let Some(key) = setting_key(line) else {
-            lines.push(line.to_string());
-            continue;
-        };
-
-        let patched = if section == CfgSection::General {
-            match key {
-                "hostname" => Some(format!("hostname = {hostname}")),
-                "port" => Some(format!("port = {port}")),
-                "password" => Some(format!("password = {password}")),
-                _ => None,
-            }
-        } else {
-            None
-        };
-
-        lines.push(patched.unwrap_or_else(|| line.to_string()));
-    }
-
-    lines.join("\n")
-}
-
+/// Point the client at a game server, in the install's `config/tes3mp-client.cfg`.
 pub fn write_tes3mp_client_connection(
     tes3mp_dir: &Path,
     destination_address: &str,
     port: u16,
     password: &str,
 ) -> Result<PathBuf, String> {
-    let cfg_path = find_client_defaults_cfg(tes3mp_dir)?;
-    let contents = std::fs::read_to_string(&cfg_path)
-        .map_err(|e| format!("Failed to read {}: {e}", cfg_path.display()))?;
-
-    let updated = patch_client_connection_cfg(&contents, destination_address, port, password);
-    std::fs::write(&cfg_path, updated)
-        .map_err(|e| format!("Failed to write {}: {e}", cfg_path.display()))?;
-    Ok(cfg_path)
+    Tes3mpCfg::new(tes3mp_dir, CLIENT_CFG).set(&[
+        ("General", "destinationAddress", destination_address.to_string()),
+        ("General", "port", port.to_string()),
+        ("General", "password", password.to_string()),
+    ])
 }
 
-fn find_client_defaults_cfg(tes3mp_dir: &Path) -> Result<PathBuf, String> {
-    let direct = tes3mp_dir.join(CLIENT_DEFAULTS_CFG);
-    if direct.is_file() {
-        return Ok(direct);
-    }
-
-    find_file_by_name(tes3mp_dir, CLIENT_DEFAULTS_CFG, 4).ok_or_else(|| {
-        format!(
-            "Could not find {CLIENT_DEFAULTS_CFG} under {}",
-            tes3mp_dir.display()
-        )
-    })
-}
-
-fn patch_client_connection_cfg(
-    contents: &str,
-    destination_address: &str,
-    port: u16,
-    password: &str,
-) -> String {
-    let mut section = CfgSection::None;
-    let mut lines: Vec<String> = Vec::new();
-
-    for line in contents.lines() {
-        if let Some(next) = parse_cfg_section(line) {
-            section = next;
-            lines.push(line.to_string());
-            continue;
-        }
-
-        let Some(key) = setting_key(line) else {
-            lines.push(line.to_string());
-            continue;
-        };
-
-        let patched = if section == CfgSection::General {
-            match key {
-                "destinationAddress" => {
-                    Some(format!("destinationAddress = {destination_address}"))
-                }
-                "port" => Some(format!("port = {port}")),
-                "password" => Some(format!("password = {password}")),
-                _ => None,
-            }
-        } else {
-            None
-        };
-
-        lines.push(patched.unwrap_or_else(|| line.to_string()));
-    }
-
-    lines.join("\n")
-}
-
-/// Align `tes3mp-client-default.cfg` with this instance's local server settings.
+/// Point this instance's client at its own local server.
 pub fn write_owned_client_connection(tes3mp_dir: &Path) -> Result<(), String> {
     let server = read_tes3mp_server_settings(tes3mp_dir)?;
     write_tes3mp_client_connection(tes3mp_dir, "127.0.0.1", server.port, &server.password)?;
@@ -418,91 +199,78 @@ pub fn write_owned_client_connection(tes3mp_dir: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn patch_general_and_master_server_sections() {
-        let input = r#"[General]
-hostname = Old Name
-maximumPlayers = 10
-port = 25565
-password = old
+    fn temp_install(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("nerevar-cfg-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("tes3mp-server-default.cfg"),
+            "[General]\nlocalAddress = 0.0.0.0\nport = 25565\nmaximumPlayers = 64\nhostname = TES3MP-NG server\npassword =\n\n[MasterServer]\nenabled = true\naddress = master.tes3mp.com\nport = 25561\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("tes3mp-client-default.cfg"),
+            "[General]\ndestinationAddress = localhost\nport = 25565\npassword = SuperSecretPassword\n\n[Chat]\nkeySay = Y\nkeyChatMode = F8\n",
+        )
+        .unwrap();
+        dir
+    }
 
-[MasterServer]
-enabled = false
-"#;
-
-        let settings = NewInstanceConfig {
+    fn new_instance(master_server_enabled: bool) -> NewInstanceConfig {
+        NewInstanceConfig {
             release_id: "1".to_string(),
             instance_name: "test".to_string(),
             instance_description: String::new(),
             instance_root_path: String::new(),
             instance_data_dir: String::new(),
             server_host_name: "Nerevar Server".to_string(),
-            max_players: 64,
+            max_players: 32,
             server_port: 25570,
             password: "secret".to_string(),
-            master_server_enabled: true,
-        };
-
-        let output = patch_server_defaults_cfg(input, &settings);
-        assert!(output.contains("hostname = Nerevar Server"));
-        assert!(output.contains("maximumPlayers = 64"));
-        assert!(output.contains("port = 25570"));
-        assert!(output.contains("password = secret"));
-        assert!(output.contains("enabled = true"));
+            master_server_enabled,
+        }
     }
 
     #[test]
-    fn patch_default_layout_keeps_master_server_port() {
-        let input = r#"[General]
-localAddress = 0.0.0.0
-port = 25565
-maximumPlayers = 64
-hostname = TES3MP server
-logLevel = 1
-password =
+    fn server_settings_go_to_the_install_config_not_the_defaults() {
+        let dir = temp_install("server");
+        let default_before = std::fs::read_to_string(dir.join("tes3mp-server-default.cfg")).unwrap();
 
-[Plugins]
-home = ./server
-plugins = serverCore.lua
+        apply_server_defaults(&dir, &new_instance(false)).unwrap();
 
-[MasterServer]
-enabled = true
-address = master.tes3mp.com
-port = 25561
-rate = 10000
-"#;
+        assert_eq!(
+            std::fs::read_to_string(dir.join("tes3mp-server-default.cfg")).unwrap(),
+            default_before
+        );
+        let user = std::fs::read_to_string(dir.join("config/tes3mp-server.cfg")).unwrap();
+        assert!(user.contains("hostname = Nerevar Server"));
+        assert!(user.contains("maximumPlayers = 32"));
+        assert!(user.contains("enabled = false"));
+        assert!(!user.contains("address = master.tes3mp.com"));
 
-        let settings = NewInstanceConfig {
-            release_id: "1".to_string(),
-            instance_name: "test".to_string(),
-            instance_description: String::new(),
-            instance_root_path: String::new(),
-            instance_data_dir: String::new(),
-            server_host_name: "My Server".to_string(),
-            max_players: 32,
-            server_port: 25570,
-            password: String::new(),
-            master_server_enabled: false,
-        };
+        let settings = read_tes3mp_server_settings(&dir).unwrap();
+        assert_eq!(settings.port, 25570);
+        assert_eq!(settings.password, "secret");
 
-        let output = patch_server_defaults_cfg(input, &settings);
+        let client = read_tes3mp_client_settings(&dir).unwrap();
+        assert_eq!(client.destination_address, "127.0.0.1");
+        assert_eq!(client.port, 25570);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
-        let general_port = output
-            .lines()
-            .skip_while(|l| l.trim() != "[General]")
-            .skip(1)
-            .take_while(|l| !l.trim().starts_with('['))
-            .find(|l| setting_key(l) == Some("port"))
-            .expect("general port");
-        assert_eq!(general_port.trim(), "port = 25570");
+    #[test]
+    fn client_connection_keeps_player_settings() {
+        let dir = temp_install("client");
+        std::fs::create_dir_all(dir.join("config")).unwrap();
+        std::fs::write(dir.join("config/tes3mp-client.cfg"), "[Chat]\nkeyChatMode = F7\n").unwrap();
 
-        let master_port = output
-            .lines()
-            .skip_while(|l| l.trim() != "[MasterServer]")
-            .skip(1)
-            .find(|l| setting_key(l) == Some("port"))
-            .expect("master port");
-        assert_eq!(master_port.trim(), "port = 25561");
-        assert!(output.contains("enabled = false"));
+        write_tes3mp_client_connection(&dir, "example.com", 25570, "pw").unwrap();
+
+        let user = std::fs::read_to_string(dir.join("config/tes3mp-client.cfg")).unwrap();
+        assert!(user.contains("keyChatMode = F7"));
+        assert!(user.contains("destinationAddress = example.com"));
+        let client = read_tes3mp_client_settings(&dir).unwrap();
+        assert_eq!((client.port, client.password.as_str()), (25570, "pw"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

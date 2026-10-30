@@ -12,6 +12,9 @@ pub struct InstanceConfig {
     pub data_dir: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub release_id: Option<String>,
+    /// Tag of the installed TES3MP-NG release, such as `v0.51.0`. Synced instances follow the host's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release_tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_host: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -53,12 +56,9 @@ pub struct InstanceConnectionSettings {
 #[derive(TS, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
+/// A synced instance only needs its host: its name, description, TES3MP-NG release, game server and
+/// settings are inherited from the host's manifest, and it's installed under the Nerevar root folder.
 pub struct NewConnectionConfig {
-    pub release_id: String,
-    pub connection_name: String,
-    pub connection_description: String,
-    pub instance_root_path: String,
-    pub instance_data_dir: String,
     pub remote_host: String,
     pub remote_sync_port: u16,
     pub sync_password: String,
@@ -132,13 +132,17 @@ pub struct GithubReleaseResponse {
     pub node_id: String,
     pub tag_name: String,
     pub target_commitish: String,
-    pub name: String,
+    // GitHub returns null for these when a release has no title, notes or publish date
+    #[serde(default)]
+    pub name: Option<String>,
     pub draft: bool,
     pub prerelease: bool,
     pub created_at: String,
-    pub published_at: String,
+    #[serde(default)]
+    pub published_at: Option<String>,
     pub assets: Vec<GithubAssetResponse>,
     pub tarball_url: String,
     pub zipball_url: String,
-    pub body: String,
+    #[serde(default)]
+    pub body: Option<String>,
 }

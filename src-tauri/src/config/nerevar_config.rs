@@ -230,6 +230,7 @@ fn build_instance_config(new_instance: &NewInstanceConfig) -> InstanceConfig {
         path: new_instance.instance_root_path.clone(),
         data_dir: new_instance.instance_data_dir.clone(),
         release_id: Some(new_instance.release_id.clone()),
+        release_tag: None,
         remote_host: None,
         remote_sync_port: None,
         last_synced_at: None,
@@ -238,14 +239,22 @@ fn build_instance_config(new_instance: &NewInstanceConfig) -> InstanceConfig {
     }
 }
 
-pub fn build_synced_instance_config(new_connection: &NewConnectionConfig) -> InstanceConfig {
+/// A synced instance takes its name, description and TES3MP-NG release from the host.
+pub fn build_synced_instance_config(
+    new_connection: &NewConnectionConfig,
+    summary: &crate::sync_client::RemoteManifestSummary,
+    release: &crate::data::GithubReleaseResponse,
+    instance_root: &Path,
+    data_dir: &Path,
+) -> InstanceConfig {
     InstanceConfig {
         id: new_instance_id(),
-        name: new_connection.connection_name.clone(),
-        description: new_connection.connection_description.clone(),
-        path: new_connection.instance_root_path.clone(),
-        data_dir: new_connection.instance_data_dir.clone(),
-        release_id: Some(new_connection.release_id.clone()),
+        name: summary.instance_name.clone(),
+        description: summary.instance_description.clone(),
+        path: instance_root.to_string_lossy().into_owned(),
+        data_dir: data_dir.to_string_lossy().into_owned(),
+        release_id: Some(release.id.to_string()),
+        release_tag: Some(release.tag_name.clone()),
         remote_host: Some(new_connection.remote_host.clone()),
         remote_sync_port: Some(new_connection.remote_sync_port),
         last_synced_at: None,
@@ -392,7 +401,7 @@ pub async fn add_instance(
     }
 
     // Filesystem setup first; only persist config after success.
-    if let Err(err) = (async {
+    let release = match (async {
         std::fs::create_dir_all(instance_root).map_err(|e| e.to_string())?;
         let instance_data_dir = Path::new(&new_instance.instance_data_dir);
         create_instance_data_dir(instance_data_dir)?;
@@ -401,7 +410,7 @@ pub async fn add_instance(
         let tes3mp_dir = instance_tes3mp_dir(instance_root);
         std::fs::create_dir_all(&tes3mp_dir).map_err(|e| e.to_string())?;
 
-        github_getters::download_and_extract_release_zip_by_id_to_path(
+        let release = github_getters::download_and_extract_release_zip_by_id_to_path(
             new_instance.release_id.clone(),
             tes3mp_dir.to_string_lossy().into_owned(),
         )
@@ -409,15 +418,19 @@ pub async fn add_instance(
 
         apply_server_defaults(&tes3mp_dir, &new_instance)?;
 
-        Ok::<(), String>(())
+        Ok::<_, String>(release)
     })
     .await
     {
-        cleanup_failed_instance_root(instance_root);
-        return Err(err);
-    }
+        Ok(release) => release,
+        Err(err) => {
+            cleanup_failed_instance_root(instance_root);
+            return Err(err);
+        }
+    };
 
-    let instance = build_instance_config(&new_instance);
+    let mut instance = build_instance_config(&new_instance);
+    instance.release_tag = Some(release.tag_name.clone());
     let (config, app_handle) = persist_owned_instance_to_config(&state, instance)?;
 
     app_handle
@@ -472,14 +485,15 @@ pub async fn add_instance(
 //     Ok(())
 // }
 
+/// Whether onboarding imported the player's Morrowind install (see `openmw_ini_importer::base_cfg`).
 pub async fn validate_global_openmw_config() -> Result<bool, String> {
-    crate::openmw_ini_importer::validate_nerevar_openmw_scaffold()
+    crate::openmw_ini_importer::validate_base_openmw_cfg()
 }
 
+/// Import the Morrowind install whose `Data Files` folder is `morrowind_installation_path`. Each
+/// instance's `openmw.cfg` is generated from it, so players don't need OpenMW's wizard.
 pub async fn generate_default_global_openmw_config(
     morrowind_installation_path: String,
 ) -> Result<(), String> {
-    crate::openmw_ini_importer::setup_nerevar_openmw_scaffold(Path::new(
-        &morrowind_installation_path,
-    ))
+    crate::openmw_ini_importer::setup_base_openmw_cfg(Path::new(&morrowind_installation_path))
 }

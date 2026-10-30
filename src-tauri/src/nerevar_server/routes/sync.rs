@@ -23,6 +23,8 @@ use crate::sync_paths::normalize_manifest_file_path;
 struct ManifestSummary {
     instance_id: String,
     instance_name: String,
+    instance_description: String,
+    tes3mp_release_tag: Option<String>,
     total_download_bytes: u64,
     package_count: u32,
     tes3mp_server_port: u16,
@@ -170,6 +172,8 @@ async fn root_manifest_summary(
     Ok(Json(ManifestSummary {
         instance_id: manifest.instance_id,
         instance_name: manifest.instance_name,
+        instance_description: manifest.instance_description,
+        tes3mp_release_tag: manifest.tes3mp_release_tag,
         total_download_bytes: manifest.total_download_bytes,
         package_count: packages.len() as u32,
         tes3mp_server_port: manifest.tes3mp_server_port,

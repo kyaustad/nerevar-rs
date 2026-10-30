@@ -55,14 +55,6 @@ pub async fn add_synced_connection(
     _app: AppHandle,
     new_connection: NewConnectionConfig,
 ) -> Result<String, String> {
-    let instance_root = Path::new(&new_connection.instance_root_path);
-    if instance_root.exists() {
-        return Err(format!(
-            "Instance path already exists: {}",
-            instance_root.display()
-        ));
-    }
-
     ping_nerevar_server(&new_connection.remote_host, new_connection.remote_sync_port).await?;
     let summary = fetch_manifest_summary(
         &new_connection.remote_host,
@@ -71,26 +63,35 @@ pub async fn add_synced_connection(
     )
     .await?;
 
+    // TES3MP-NG clients must run the host's build
+    let tag = summary.tes3mp_release_tag.clone().ok_or_else(|| {
+        "The host didn't report its TES3MP-NG release. The host needs to update Nerevar and host the instance again."
+            .to_string()
+    })?;
+    let release = github_getters::find_release_by_tag(&tag).await?;
+
+    let root_path = {
+        let guard = state.lock().map_err(|_| "App state lock poisoned".to_string())?;
+        guard.nerevar_config.root_path.clone()
+    }
+    .ok_or_else(|| "Choose where Nerevar stores instances first (Settings).".to_string())?;
+    let instance_root = unique_instance_root(Path::new(&root_path), &summary.instance_name);
+    let instance_data_dir = instance_root.join(crate::instance_data::INSTANCE_DATA_DIR);
+
     if let Err(err) = (async {
-        std::fs::create_dir_all(instance_root).map_err(|e| e.to_string())?;
-        let instance_data_dir = Path::new(&new_connection.instance_data_dir);
-        create_instance_data_dir(instance_data_dir)?;
-        ensure_instance_data_layout(instance_data_dir)?;
+        std::fs::create_dir_all(&instance_root).map_err(|e| e.to_string())?;
+        create_instance_data_dir(&instance_data_dir)?;
+        ensure_instance_data_layout(&instance_data_dir)?;
 
-        let tes3mp_dir = instance_tes3mp_dir(instance_root);
-        std::fs::create_dir_all(&tes3mp_dir).map_err(|e| e.to_string())?;
+        let tes3mp_dir = instance_tes3mp_dir(&instance_root);
+        github_getters::install_release(&release, &tes3mp_dir).await?;
 
-        github_getters::download_and_extract_release_zip_by_id_to_path(
-            new_connection.release_id.clone(),
-            tes3mp_dir.to_string_lossy().into_owned(),
-        )
-        .await?;
-
+        // The game server's password comes with the first sync
         write_tes3mp_client_connection(
             &tes3mp_dir,
             &new_connection.remote_host,
             summary.tes3mp_server_port,
-            &new_connection.sync_password,
+            "",
         )?;
 
         Ok::<(), String>(())
@@ -98,12 +99,18 @@ pub async fn add_synced_connection(
     .await
     {
         if instance_root.exists() {
-            let _ = std::fs::remove_dir_all(instance_root);
+            let _ = std::fs::remove_dir_all(&instance_root);
         }
         return Err(err);
     }
 
-    let mut instance = build_synced_instance_config(&new_connection);
+    let mut instance = build_synced_instance_config(
+        &new_connection,
+        &summary,
+        &release,
+        &instance_root,
+        &instance_data_dir,
+    );
     instance.tes3mp_server_port = Some(summary.tes3mp_server_port);
     let instance_id = instance.id.clone();
     let (config, app_handle) = persist_synced_instance_to_config(&state, instance)?;
@@ -116,6 +123,27 @@ pub async fn add_synced_connection(
         .map_err(|e| e.to_string())?;
 
     Ok(instance_id)
+}
+
+/// A new folder under the Nerevar root named after the host's instance, with " (2)", " (3)"...
+/// when it's taken.
+fn unique_instance_root(root: &Path, instance_name: &str) -> std::path::PathBuf {
+    let name: String = instance_name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.') { c } else { '_' })
+        .collect::<String>()
+        .trim()
+        .trim_end_matches('.')
+        .to_string();
+    let name = if name.is_empty() { "Synced instance".to_string() } else { name };
+
+    let mut candidate = root.join(&name);
+    let mut number = 2;
+    while candidate.exists() {
+        candidate = root.join(format!("{name} ({number})"));
+        number += 1;
+    }
+    candidate
 }
 
 #[tauri::command]
@@ -208,12 +236,19 @@ pub async fn launch_instance_client(
         .ensure_can_launch(&instance_id, ProcessRole::Client)?;
 
     let data_dir = resolve_package_data_dir(&instance);
+    // Synced instances get the host's client files (shader settings...)
+    let client_files = if instance.remote_host.is_some() {
+        load_manifest(&data_dir)?.client_files
+    } else {
+        Vec::new()
+    };
     launch_tes3mp_client(
         app,
         process_manager.inner().clone(),
         &instance_id,
         Path::new(&instance.path),
         &data_dir,
+        &client_files,
     )
 }
 

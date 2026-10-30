@@ -7,8 +7,6 @@ pub const NEREVAR_DIR: &str = ".nerevar";
 pub const INSTANCE_DATA_DIR: &str = "data";
 pub const LOAD_ORDER_FILE: &str = "load-order.json";
 pub const MANIFEST_FILE: &str = "manifest.json";
-pub const LAUNCH_CFG_DIR: &str = "launch";
-pub const LAUNCH_CFG_FILE: &str = "openmw.launch.cfg";
 
 pub fn nerevar_dir(data_dir: &Path) -> PathBuf {
     data_dir.join(NEREVAR_DIR)
@@ -20,14 +18,6 @@ pub fn load_order_path(data_dir: &Path) -> PathBuf {
 
 pub fn manifest_path(data_dir: &Path) -> PathBuf {
     nerevar_dir(data_dir).join(MANIFEST_FILE)
-}
-
-pub fn launch_cfg_dir(data_dir: &Path) -> PathBuf {
-    nerevar_dir(data_dir).join(LAUNCH_CFG_DIR)
-}
-
-pub fn launch_cfg_path(data_dir: &Path) -> PathBuf {
-    launch_cfg_dir(data_dir).join(LAUNCH_CFG_FILE)
 }
 
 pub fn package_abs_path(data_dir: &Path, relative_dir: &str) -> PathBuf {
@@ -60,18 +50,8 @@ fn effective_data_dir(instance_root: &Path, configured: &Path) -> PathBuf {
     configured.to_path_buf()
 }
 
-pub fn launch_settings_overlay_path(data_dir: &Path) -> PathBuf {
-    launch_cfg_dir(data_dir).join("openmw.launch.settings.cfg")
-}
-
-/// Ensure `.nerevar/launch/` and `.nerevar/cache/` exist under the instance data directory.
+/// Ensure `.nerevar/` and `.nerevar/cache/` exist under the instance data directory.
 pub fn ensure_instance_data_layout(data_dir: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(launch_cfg_dir(data_dir)).map_err(|e| {
-        format!(
-            "Failed to create {}: {e}",
-            launch_cfg_dir(data_dir).display()
-        )
-    })?;
     std::fs::create_dir_all(nerevar_dir(data_dir).join("cache")).map_err(|e| {
         format!(
             "Failed to create {}: {e}",
@@ -93,6 +73,7 @@ mod tests {
             path: path.to_string_lossy().into_owned(),
             data_dir: data_dir.to_string_lossy().into_owned(),
             release_id: None,
+            release_tag: None,
             remote_host: None,
             remote_sync_port: None,
             last_synced_at: None,

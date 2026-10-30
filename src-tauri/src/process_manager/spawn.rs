@@ -7,19 +7,18 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Emitter};
 
-use crate::instance_data::{
-    launch_cfg_path, launch_settings_overlay_path, resolve_instance_openmw_config,
-    write_instance_launch_cfg,
-};
+use crate::instance_data::{resolve_instance_openmw_config, ClientConfigFile};
 use crate::instance_setup::{instance_tes3mp_dir, write_required_data_files_for_resolved};
-use crate::openmw_ini_importer::begin_global_openmw_launch;
 use crate::sync_client::types::{ProcessOutputEvent, ProcessStatusEvent, ProcessStream};
 
 use super::state::{spawn_exit_watcher, ProcessManager};
 use super::types::ProcessRole;
 
-const CLIENT_EXE_NAMES: &[&str] = &["tes3mp.exe", "TES3MP.exe", "openmw.exe", "OpenMW.exe"];
-const SERVER_EXE_NAMES: &[&str] = &["tes3mp-server.exe", "TES3MP-server.exe"];
+// TES3MP-NG's client is built as openmw.exe
+const CLIENT_EXE_NAMES: &[&str] = &["openmw.exe", "tes3mp.exe"];
+const SERVER_EXE_NAMES: &[&str] = &["tes3mp-server.exe"];
+/// Executables sit at the top of the portable TES3MP-NG folder.
+const EXE_SEARCH_DEPTH: u32 = 2;
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -93,38 +92,24 @@ fn pipe_process_output(
     });
 }
 
-    fn prepare_launch_cfg(data_dir: &Path) -> Result<(PathBuf, Option<PathBuf>), String> {
-    let resolved = resolve_instance_openmw_config(data_dir)?;
-    let settings = crate::instance_settings::load_instance_settings(data_dir)?;
-    write_instance_launch_cfg(data_dir, &resolved, &settings.openmw_cfg_overrides)?;
-    let settings_overlay = launch_settings_overlay_path(data_dir);
-    let settings_path = settings_overlay.is_file().then_some(settings_overlay);
-    Ok((launch_cfg_path(data_dir), settings_path))
-}
-
+/// Launch the TES3MP-NG client of an instance. Its portable `config/` folder is written first:
+/// `openmw.cfg` from the load order, and seeded settings and `client_files` (the host's, for synced
+/// instances).
 pub fn launch_tes3mp_client(
     app: AppHandle,
     manager: Arc<ProcessManager>,
     instance_id: &str,
     instance_root: &Path,
     data_dir: &Path,
+    client_files: &[ClientConfigFile],
 ) -> Result<(), String> {
-    let (launch_cfg, launch_settings) = match prepare_launch_cfg(data_dir) {
-        Ok(paths) => paths,
-        Err(err) => return Err(err),
-    };
-
-    let global_session = match begin_global_openmw_launch(&launch_cfg, launch_settings.as_deref()) {
-        Ok(session) => session,
-        Err(err) => return Err(err),
-    };
-    manager.store_global_openmw_session(global_session)?;
-
     let tes3mp_dir = instance_tes3mp_dir(instance_root);
-    let exe = find_executable(&tes3mp_dir, CLIENT_EXE_NAMES, 5).ok_or_else(|| {
-        manager.restore_global_openmw_session_if_any();
+    let config_dir =
+        crate::client_config::write_instance_client_config(&tes3mp_dir, data_dir, client_files)?;
+
+    let exe = find_executable(&tes3mp_dir, CLIENT_EXE_NAMES, EXE_SEARCH_DEPTH).ok_or_else(|| {
         format!(
-            "Could not find TES3MP client executable under {}",
+            "Could not find the TES3MP-NG client (openmw.exe) under {}",
             tes3mp_dir.display()
         )
     })?;
@@ -136,17 +121,13 @@ pub fn launch_tes3mp_client(
     );
 
     tauri_plugin_log::log::info!(
-        "Launching TES3MP client using global openmw.cfg swap and launch overlay at {}",
-        launch_cfg.display()
+        "Launching TES3MP-NG client with its config in {}",
+        config_dir.display()
     );
 
-    let mut child = match command.spawn() {
-        Ok(child) => child,
-        Err(err) => {
-            manager.restore_global_openmw_session_if_any();
-            return Err(format!("Failed to launch TES3MP client: {err}"));
-        }
-    };
+    let mut child = command
+        .spawn()
+        .map_err(|err| format!("Failed to launch TES3MP client: {err}"))?;
 
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -172,7 +153,6 @@ pub fn launch_tes3mp_client(
 
     thread::sleep(Duration::from_millis(900));
     if let Ok(Some(status)) = child.try_wait() {
-        manager.restore_global_openmw_session_if_any();
         return Err(format!(
             "TES3MP client exited immediately (code {:?}). Check the client output console below.",
             status.code()
@@ -207,11 +187,10 @@ pub fn launch_tes3mp_server(
     instance_root: &Path,
     data_dir: &Path,
 ) -> Result<(), String> {
-    let (launch_cfg, _launch_settings) = prepare_launch_cfg(data_dir)?;
     let tes3mp_dir = instance_tes3mp_dir(instance_root);
     let resolved = resolve_instance_openmw_config(data_dir)?;
     write_required_data_files_for_resolved(&tes3mp_dir, &resolved)?;
-    let exe = find_executable(&tes3mp_dir, SERVER_EXE_NAMES, 5).ok_or_else(|| {
+    let exe = find_executable(&tes3mp_dir, SERVER_EXE_NAMES, EXE_SEARCH_DEPTH).ok_or_else(|| {
         format!(
             "Could not find TES3MP server executable under {}",
             tes3mp_dir.display()

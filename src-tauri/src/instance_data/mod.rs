@@ -22,15 +22,13 @@ pub use manifest::{
     build_manifest, load_manifest, validate_manifest_against_disk,
 };
 pub use manifest_compare::manifests_differ;
-pub use openmw_cfg::{
-    resolve_instance_openmw_config, write_ephemeral_openmw_cfg, write_instance_launch_cfg,
-};
+pub use openmw_cfg::resolve_instance_openmw_config;
 pub use progress::{
     BackgroundOperationPhase, BackgroundOperationProgressEvent, ProgressEmitter,
 };
 pub use paths::{
-    ensure_instance_data_layout, launch_cfg_dir, launch_cfg_path, launch_settings_overlay_path,
-    manifest_path, nerevar_dir, package_abs_path, resolve_package_data_dir,
+    ensure_instance_data_layout, manifest_path, nerevar_dir, package_abs_path,
+    resolve_package_data_dir, INSTANCE_DATA_DIR,
 };
 pub use prune::prune_local_against_manifest;
 pub use remove::delete_package;

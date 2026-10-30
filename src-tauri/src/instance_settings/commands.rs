@@ -8,9 +8,7 @@ use crate::instance_setup::instance_tes3mp_dir;
 use crate::AppState;
 
 use super::defaults::{normalize_instance_settings, setting_definitions};
-use super::storage::{
-    load_instance_settings, save_instance_settings, write_launch_settings_overlay,
-};
+use super::storage::{load_instance_settings, save_instance_settings};
 use super::tes3mp_lua::write_tes3mp_game_settings;
 use super::types::{InstanceSettings, SettingDefinition};
 
@@ -20,7 +18,6 @@ pub fn apply_instance_settings_to_disk(
     settings: &InstanceSettings,
 ) -> Result<(), String> {
     save_instance_settings(data_dir, settings)?;
-    write_launch_settings_overlay(data_dir, settings)?;
     write_tes3mp_game_settings(&instance_tes3mp_dir(instance_root), settings)?;
     Ok(())
 }

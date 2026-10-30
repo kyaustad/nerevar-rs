@@ -142,6 +142,10 @@ mod tests {
             version: MANIFEST_VERSION,
             instance_id: "test".into(),
             instance_name: "Test".into(),
+            instance_description: String::new(),
+            tes3mp_release_tag: None,
+            tes3mp_server_address: None,
+            client_files: Vec::new(),
             generated_at: "now".into(),
             base_game_data: None,
             packages: vec![ManifestPackage {

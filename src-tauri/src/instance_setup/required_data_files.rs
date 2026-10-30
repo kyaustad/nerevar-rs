@@ -40,8 +40,14 @@ pub fn build_required_data_files(resolved: &ResolvedOpenMwConfig) -> Result<Vec<
 
     for plugin in &resolved.content {
         let path = resolve_plugin_path(&index, plugin)?;
-        let computed = file_crc32_hex(&path)?;
-        let checksums = merge_checksums(plugin, computed);
+        // TES3MP-NG checksums a Lua mod's .omwscripts manifest together with every file in its
+        // scripts' folders, which a CRC32 of the manifest alone would never match. An empty list
+        // accepts any version: Nerevar's sync already verifies the files themselves
+        let checksums = if is_lua_manifest(plugin) {
+            Vec::new()
+        } else {
+            merge_checksums(plugin, file_crc32_hex(&path)?)
+        };
         entries.push(RequiredDataFileEntry {
             file: plugin.clone(),
             checksums,
@@ -152,6 +158,13 @@ fn file_crc32_hex(path: &Path) -> Result<String, String> {
     Ok(format!("0x{:08X}", hasher.finalize()))
 }
 
+fn is_lua_manifest(plugin: &str) -> bool {
+    Path::new(plugin)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("omwscripts"))
+}
+
 fn merge_checksums(plugin: &str, computed: String) -> Vec<String> {
     let mut set: HashSet<String> = HashSet::new();
     let lower = plugin.to_ascii_lowercase();
@@ -203,6 +216,25 @@ mod tests {
         let merged = merge_checksums("Morrowind.esm", "0x7B6AF5B9".to_string());
         assert!(merged.contains(&"0x7B6AF5B9".to_string()));
         assert!(merged.contains(&"0x34282D67".to_string()));
+    }
+
+    #[test]
+    fn lua_mods_accept_any_checksum() {
+        let dir = std::env::temp_dir().join(format!("nerevar-required-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Mod.esp"), b"plugin").unwrap();
+        std::fs::write(dir.join("LuaMod.omwscripts"), b"PLAYER: scripts/mod/player.lua").unwrap();
+
+        let entries = build_required_data_files(&ResolvedOpenMwConfig {
+            encoding: "win1252".into(),
+            data_paths: vec![format!("\"{}\"", dir.display())],
+            content: vec!["Mod.esp".into(), "LuaMod.omwscripts".into()],
+        })
+        .unwrap();
+        assert_eq!(entries[0].checksums.len(), 1);
+        assert!(entries[1].checksums.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

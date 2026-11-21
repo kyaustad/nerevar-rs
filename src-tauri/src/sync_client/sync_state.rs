@@ -66,7 +66,7 @@ pub fn count_verified_in_manifest(
 ) -> (u64, u64) {
     let mut bytes = 0u64;
     let mut files = 0u64;
-    for package in &manifest.packages {
+    for package in manifest.all_packages() {
         for file in &package.files {
             if is_verified_in(completed, &package.id, file) {
                 bytes = bytes.saturating_add(file.size);
@@ -119,7 +119,7 @@ pub fn sync_is_complete(state: &SyncStateFile, manifest: &NerevarManifest) -> bo
         return false;
     }
 
-    for package in &manifest.packages {
+    for package in manifest.all_packages() {
         for file in &package.files {
             if !state.is_verified(&package.id, file) {
                 return false;
@@ -295,8 +295,7 @@ pub fn adopt_existing_files_into_state(
         count_verified_in_manifest(manifest, &completed);
     let bytes_total = manifest.total_download_bytes.max(1);
     let files_total = manifest
-        .packages
-        .iter()
+        .all_packages()
         .map(|package| package.files.len() as u64)
         .sum();
 
@@ -311,7 +310,7 @@ pub fn adopt_existing_files_into_state(
     }
 
     let mut candidates = Vec::new();
-    for package in &manifest.packages {
+    for package in manifest.all_packages() {
         let package_dir = package_abs(data_dir, &package.relative_dir);
         for entry in &package.files {
             if is_verified_in(&completed, &package.id, entry) {
@@ -421,7 +420,7 @@ pub fn instance_sync_status(data_dir: &Path, manifest: &NerevarManifest) -> Resu
     let mut files_total = 0u32;
     let mut bytes_total = 0u64;
 
-    for package in &manifest.packages {
+    for package in manifest.all_packages() {
         for file in &package.files {
             files_total += 1;
             bytes_total = bytes_total.saturating_add(file.size);

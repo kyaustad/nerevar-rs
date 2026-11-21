@@ -326,6 +326,7 @@ Replacer Only,9,,,
             content_order: None,
             entries: vec![
                 LoadOrderEntry {
+                    shader_kind: None,
                     id: "1".into(),
                     name: "Tamriel Rebuilt".into(),
                     kind: PackageKind::Mod,
@@ -345,6 +346,7 @@ Replacer Only,9,,,
                     tree_checksum: None,
                 },
                 LoadOrderEntry {
+                    shader_kind: None,
                     id: "2".into(),
                     name: "Unused Mod".into(),
                     kind: PackageKind::Mod,

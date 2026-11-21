@@ -21,8 +21,7 @@ fn prune_orphan_package_dirs(data_dir: &Path, manifest: &NerevarManifest) -> Res
     }
 
     let manifest_dirs: HashSet<&str> = manifest
-        .packages
-        .iter()
+        .all_packages()
         .map(|package| package.relative_dir.as_str())
         .collect();
 
@@ -49,7 +48,7 @@ fn prune_orphan_package_dirs(data_dir: &Path, manifest: &NerevarManifest) -> Res
 }
 
 fn prune_stale_package_files(data_dir: &Path, manifest: &NerevarManifest) -> Result<(), String> {
-    for package in &manifest.packages {
+    for package in manifest.all_packages() {
         let package_dir = package_abs_path(data_dir, &package.relative_dir);
         if !package_dir.is_dir() {
             continue;
@@ -163,6 +162,7 @@ mod tests {
                     checksum: "deadbeef".into(),
                 }],
                 plugins: vec![],
+                shader_kind: None,
             }],
             resolved: ResolvedOpenMwConfig {
                 encoding: "win1252".into(),
@@ -174,6 +174,7 @@ mod tests {
             tes3mp_server_password: String::new(),
             required_data_files: vec![],
             instance_settings: InstanceSettings::default(),
+            shaders: Default::default(),
         };
 
         prune_local_against_manifest(&dir, &manifest).unwrap();

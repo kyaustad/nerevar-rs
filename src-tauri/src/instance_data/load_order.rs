@@ -13,7 +13,27 @@ pub fn load_load_order(data_dir: &Path) -> Result<LoadOrder, String> {
     }
     let contents =
         std::fs::read_to_string(&path).map_err(|e| format!("Failed to read load order: {e}"))?;
-    serde_json::from_str(&contents).map_err(|e| format!("Invalid load-order.json: {e}"))
+    let mut load_order: LoadOrder =
+        serde_json::from_str(&contents).map_err(|e| format!("Invalid load-order.json: {e}"))?;
+    if load_order.version < LOAD_ORDER_VERSION {
+        mark_shader_packages(data_dir, &mut load_order);
+    }
+    Ok(load_order)
+}
+
+/// Load orders from before shader packages were kept apart: find them once. Later the player's choice
+/// is kept.
+fn mark_shader_packages(data_dir: &Path, load_order: &mut LoadOrder) {
+    for entry in &mut load_order.entries {
+        if entry.shader_kind.is_none() {
+            let plugins: Vec<String> = entry.plugins.iter().map(|plugin| plugin.file.clone()).collect();
+            entry.shader_kind = crate::shaders::packages::detect_shader_kind(
+                &super::paths::package_abs_path(data_dir, &entry.relative_dir),
+                &plugins,
+            );
+        }
+    }
+    load_order.version = LOAD_ORDER_VERSION;
 }
 
 pub fn save_load_order(data_dir: &Path, load_order: &LoadOrder) -> Result<(), String> {
@@ -31,9 +51,7 @@ pub fn scan_and_merge_load_order(
 ) -> Result<LoadOrder, String> {
     ensure_instance_data_layout(data_dir)?;
     let mut load_order = load_load_order(data_dir)?;
-    if load_order.version == 0 {
-        load_order.version = LOAD_ORDER_VERSION;
-    }
+    load_order.version = LOAD_ORDER_VERSION;
 
     if load_order.base_game_data.is_none() {
         load_order.base_game_data = openmw_ini_importer::read_base_data_path();
@@ -123,6 +141,7 @@ pub fn merge_scanned_with_data_dir(
             priority: max_priority + 10,
             plugins,
             tree_checksum: package.tree_checksum,
+            shader_kind: package.shader_kind,
         });
     }
 

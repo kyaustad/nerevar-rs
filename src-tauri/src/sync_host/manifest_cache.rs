@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
-use crate::instance_data::{load_manifest, manifest_path};
+use crate::instance_data::{load_manifest, manifest_path, SyncSection};
 
 #[derive(Clone)]
 struct HostingPackageIndex {
@@ -16,6 +16,7 @@ struct CachedHostingManifest {
     data_dir: PathBuf,
     manifest_mtime: SystemTime,
     packages: HashMap<String, HostingPackageIndex>,
+    shader_packages: HashMap<String, HostingPackageIndex>,
 }
 
 #[derive(Default)]
@@ -31,6 +32,7 @@ impl HostingManifestCache {
     fn resolve(
         &self,
         data_dir: &Path,
+        section: SyncSection,
         package_id: &str,
         relative_path: &str,
     ) -> Option<(PathBuf, PathBuf)> {
@@ -39,7 +41,11 @@ impl HostingManifestCache {
             return None;
         }
 
-        let package = cache.packages.get(package_id)?;
+        let packages = match section {
+            SyncSection::Data => &cache.packages,
+            SyncSection::Shaders => &cache.shader_packages,
+        };
+        let package = packages.get(package_id)?;
         if !package.files.contains(relative_path) {
             return None;
         }
@@ -69,23 +75,24 @@ impl HostingManifestCache {
         }
 
         let manifest = load_manifest(data_dir)?;
-        let mut packages = HashMap::with_capacity(manifest.packages.len());
-
-        for package in &manifest.packages {
-            let files = package.files.iter().map(|file| file.path.clone()).collect();
-            packages.insert(
-                package.id.clone(),
-                HostingPackageIndex {
-                    relative_dir: PathBuf::from(&package.relative_dir),
-                    files,
-                },
-            );
-        }
+        let index = |packages: &[crate::instance_data::ManifestPackage]| {
+            packages
+                .iter()
+                .map(|package| {
+                    let files = package.files.iter().map(|file| file.path.clone()).collect();
+                    (
+                        package.id.clone(),
+                        HostingPackageIndex { relative_dir: PathBuf::from(&package.relative_dir), files },
+                    )
+                })
+                .collect::<HashMap<_, _>>()
+        };
 
         self.inner = Some(CachedHostingManifest {
             data_dir: data_dir.to_path_buf(),
             manifest_mtime,
-            packages,
+            packages: index(&manifest.packages),
+            shader_packages: index(&manifest.shaders.packages),
         });
 
         Ok(())
@@ -101,6 +108,7 @@ pub fn new_shared_hosting_manifest_cache() -> SharedHostingManifestCache {
 pub fn get_package_file_path(
     cache: &SharedHostingManifestCache,
     data_dir: &Path,
+    section: SyncSection,
     package_id: &str,
     relative_path: &str,
 ) -> Result<Option<(PathBuf, PathBuf)>, String> {
@@ -112,7 +120,7 @@ pub fn get_package_file_path(
 
     if let Ok(guard) = cache.read() {
         if guard.is_current(data_dir, manifest_mtime) {
-            return Ok(guard.resolve(data_dir, package_id, relative_path));
+            return Ok(guard.resolve(data_dir, section, package_id, relative_path));
         }
     }
 
@@ -123,7 +131,7 @@ pub fn get_package_file_path(
         guard.reload(data_dir)?;
     }
 
-    Ok(guard.resolve(data_dir, package_id, relative_path))
+    Ok(guard.resolve(data_dir, section, package_id, relative_path))
 }
 
 #[cfg(test)]
@@ -166,14 +174,17 @@ mod tests {
         )
         .unwrap();
 
-        let resolved = get_package_file_path(&cache, &data_dir, "pkg-1", "a.txt").unwrap();
+        let resolved = get_package_file_path(&cache, &data_dir, SyncSection::Data, "pkg-1", "a.txt").unwrap();
         assert!(resolved.is_some());
+        // Data packages aren't served as shaders
+        assert!(get_package_file_path(&cache, &data_dir, SyncSection::Shaders, "pkg-1", "a.txt").unwrap().is_none());
 
         let read_guard = cache.read().unwrap();
         assert!(read_guard.inner.is_some());
         drop(read_guard);
 
-        let resolved_again = get_package_file_path(&cache, &data_dir, "pkg-1", "a.txt").unwrap();
+        let resolved_again =
+            get_package_file_path(&cache, &data_dir, SyncSection::Data, "pkg-1", "a.txt").unwrap();
         assert_eq!(resolved, resolved_again);
 
         let _ = std::fs::remove_dir_all(&data_dir);

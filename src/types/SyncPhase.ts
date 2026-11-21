@@ -5,6 +5,8 @@ export type SyncPhase =
   | "verifyingExisting"
   | "fetchingManifest"
   | "downloading"
+  | "verifyingShaders"
+  | "downloadingShaders"
   | "applyingLoadOrder"
   | "validating"
   | "writingLaunchCfg"

@@ -82,6 +82,11 @@ pub fn write_instance_client_config(
             files,
         },
     )?;
+
+    // Core shader packages replace the install's own shaders
+    let load_order = crate::instance_data::load_load_order(data_dir)?;
+    let core_shaders = crate::shaders::packages::enabled_core_shader_dirs(data_dir, &load_order);
+    crate::shaders::packages::apply_core_shaders(tes3mp_dir, &core_shaders)?;
     Ok(config_dir)
 }
 

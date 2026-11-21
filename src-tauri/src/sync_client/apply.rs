@@ -9,7 +9,7 @@ pub fn apply_manifest_to_load_order(
     data_dir: &Path,
     manifest: &NerevarManifest,
 ) -> Result<LoadOrder, String> {
-    let mut packages: Vec<_> = manifest.packages.iter().collect();
+    let mut packages: Vec<_> = manifest.all_packages().collect();
     packages.sort_by_key(|p| p.priority);
 
     let existing_base = load_load_order(data_dir)
@@ -35,6 +35,7 @@ pub fn apply_manifest_to_load_order(
                 priority: pkg.priority,
                 plugins: pkg.plugins.clone(),
                 tree_checksum: Some(pkg.tree_checksum.clone()),
+                shader_kind: pkg.shader_kind,
             })
             .collect(),
     };

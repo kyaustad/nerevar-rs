@@ -10,7 +10,7 @@ use super::progress::{BackgroundOperationPhase, ProgressEmitter};
 use super::resolver::resolve_load_order;
 use super::types::{
     LoadOrder, LoadOrderEntry, ManifestPackage, ManifestValidationIssue,
-    ManifestValidationResult, NerevarManifest, MANIFEST_VERSION,
+    ManifestValidationResult, NerevarManifest, ShaderManifest, MANIFEST_VERSION,
 };
 
 use crate::data::InstanceConfig;
@@ -125,6 +125,7 @@ pub fn build_manifest(
                     file_count: files.len() as u32,
                     files,
                     plugins: item.entry.plugins.clone(),
+                    shader_kind: item.entry.shader_kind,
                 },
             ))
         })
@@ -133,11 +134,16 @@ pub fn build_manifest(
     let mut hashed_packages = hashed_packages?;
     hashed_packages.sort_by_key(|(index, _)| *index);
 
-    let packages: Vec<ManifestPackage> = hashed_packages
+    // Shader packages are listed and synced on their own
+    let (shader_packages, packages): (Vec<ManifestPackage>, Vec<ManifestPackage>) = hashed_packages
         .into_iter()
         .map(|(_, package)| package)
-        .collect();
+        .partition(|package| package.shader_kind.is_some());
     let total_download_bytes = packages.iter().map(|package| package.total_size_bytes).sum();
+    let shaders = ShaderManifest {
+        total_download_bytes: shader_packages.iter().map(|package| package.total_size_bytes).sum(),
+        packages: shader_packages,
+    };
 
     // The instance's shader values, else the host's own game's
     let client_files = crate::client_config::instance_client_files(
@@ -163,6 +169,7 @@ pub fn build_manifest(
         required_data_files,
         instance_settings,
         client_files,
+        shaders,
     };
 
     if let Some(emitter) = shared_progress.as_ref() {
@@ -200,8 +207,8 @@ pub fn validate_manifest_against_disk(
     manifest: &NerevarManifest,
 ) -> ManifestValidationResult {
     let data_dir = data_dir.to_path_buf();
-    let issues: Vec<ManifestValidationIssue> = manifest
-        .packages
+    let packages: Vec<&ManifestPackage> = manifest.all_packages().collect();
+    let issues: Vec<ManifestValidationIssue> = packages
         .par_iter()
         .flat_map(|package| validate_package_on_disk(&data_dir, package))
         .collect();

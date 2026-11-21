@@ -11,6 +11,8 @@ const PHASE_LABELS: Record<SyncProgressEvent["phase"], string> = {
   verifyingExisting: "Verifying downloaded files",
   fetchingManifest: "Fetching manifest",
   downloading: "Downloading",
+  verifyingShaders: "Verifying shaders",
+  downloadingShaders: "Downloading shaders",
   applyingLoadOrder: "Applying load order",
   validating: "Verifying files",
   writingLaunchCfg: "Writing client config",
@@ -66,10 +68,14 @@ export function SyncProgressPanel({
     filesTotal > 0 &&
     (progress?.phase === "downloading" ||
       progress?.phase === "verifyingExisting" ||
+      progress?.phase === "downloadingShaders" ||
+      progress?.phase === "verifyingShaders" ||
       showResumeBanner);
 
   const showDownloadSubBar =
-    progress?.phase === "downloading" && bytesTotal > 0;
+    (progress?.phase === "downloading" ||
+      progress?.phase === "downloadingShaders") &&
+    bytesTotal > 0;
 
   return (
     <div className={cn("space-y-3", className)}>

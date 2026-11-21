@@ -18,7 +18,15 @@ pub fn overall_sync_percent(phase: SyncPhase, bytes_done: u64, bytes_total: u64)
             if bytes_total == 0 {
                 12
             } else {
-                12 + percent_of_range(bytes_done, bytes_total, 73)
+                12 + percent_of_range(bytes_done, bytes_total, 63)
+            }
+        }
+        SyncPhase::VerifyingShaders => 75,
+        SyncPhase::DownloadingShaders => {
+            if bytes_total == 0 {
+                76
+            } else {
+                76 + percent_of_range(bytes_done, bytes_total, 10)
             }
         }
         SyncPhase::ApplyingLoadOrder => 88,

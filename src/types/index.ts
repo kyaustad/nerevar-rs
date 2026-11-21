@@ -51,4 +51,6 @@ export * from "./LuaScriptPolicy";
 export * from "./ScriptMode";
 export * from "./ScriptModeSuggestion";
 export * from "./ShaderInfo";
+export * from "./ShaderManifest";
+export * from "./ShaderPackageKind";
 export * from "./SuggestionConfidence";

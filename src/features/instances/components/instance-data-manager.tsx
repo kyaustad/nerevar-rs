@@ -19,6 +19,13 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   DndContext,
   DragOverlay,
   KeyboardSensor,
@@ -39,7 +46,6 @@ import { CSS } from "@dnd-kit/utilities";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useBackgroundOperation } from "@/features/instances/context/background-operation-context";
 import {
-  moveEntryByOffset,
   normalizePriorities,
   reorderLoadOrderEntries,
   setEntryPriority,
@@ -53,6 +59,7 @@ import type {
   LoadOrderEntry,
   Mo2ModlistImportResult,
   NerevarManifest,
+  ShaderPackageKind,
 } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -273,16 +280,6 @@ export function InstanceDataManager({
     });
   }, []);
 
-  const moveEntry = useCallback((index: number, direction: -1 | 1) => {
-    setLoadOrder((current) => {
-      if (!current) return current;
-      return clearMo2ContentOrder({
-        ...current,
-        entries: moveEntryByOffset(current.entries, index, direction),
-      });
-    });
-  }, []);
-
   const updateEntryPriority = (entryId: string, rawPriority: string) => {
     setLoadOrder((current) => {
       if (!current) return current;
@@ -291,6 +288,19 @@ export function InstanceDataManager({
         entries: setEntryPriority(current.entries, entryId, rawPriority),
       });
     });
+  };
+
+  const setShaderKind = (id: string, shaderKind: ShaderPackageKind | null) => {
+    setLoadOrder((current) =>
+      current
+        ? {
+            ...current,
+            entries: current.entries.map((entry) =>
+              entry.id === id ? { ...entry, shaderKind } : entry,
+            ),
+          }
+        : current,
+    );
   };
 
   const toggleEntry = (id: string) => {
@@ -401,6 +411,21 @@ export function InstanceDataManager({
   const sortedEntries = loadOrder
     ? sortLoadOrderEntries(loadOrder.entries)
     : [];
+  // Data and shader packages are listed apart, but share one order
+  const dataEntries = sortedEntries.filter((entry) => !entry.shaderKind);
+  const shaderEntries = sortedEntries.filter((entry) => entry.shaderKind);
+  const listHandlers = (list: LoadOrderEntry[]) => {
+    const fullIndex = (index: number) =>
+      sortedEntries.findIndex((entry) => entry.id === list[index]?.id);
+    return {
+      onMoveUp: (index: number) =>
+        reorderEntries(fullIndex(index), fullIndex(index - 1)),
+      onMoveDown: (index: number) =>
+        reorderEntries(fullIndex(index), fullIndex(index + 1)),
+      onReorder: (from: number, to: number) =>
+        reorderEntries(fullIndex(from), fullIndex(to)),
+    };
+  };
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-1 pb-10">
@@ -452,6 +477,14 @@ export function InstanceDataManager({
           <Tabs defaultValue="directories">
             <TabsList variant="line" className="w-full justify-start">
               <TabsTrigger value="directories">Directories</TabsTrigger>
+              <TabsTrigger value="shaders">
+                Shaders
+                {shaderEntries.length > 0 ? (
+                  <Badge variant="secondary" className="ml-1.5 text-xs">
+                    {shaderEntries.length}
+                  </Badge>
+                ) : null}
+              </TabsTrigger>
               <TabsTrigger value="plugins">Plugins</TabsTrigger>
             </TabsList>
 
@@ -459,13 +492,40 @@ export function InstanceDataManager({
               <DirectoryList
                 initialLoading={initialLoading}
                 loadOrder={loadOrder}
-                sortedEntries={sortedEntries}
+                sortedEntries={dataEntries}
                 deletingEntryId={deletingEntryId}
+                emptyMessage="No packages found. Add mod folders directly in the instance data directory, then rescan."
                 onToggle={toggleEntry}
-                onMoveUp={(index) => moveEntry(index, -1)}
-                onMoveDown={(index) => moveEntry(index, 1)}
-                onReorder={reorderEntries}
+                {...listHandlers(dataEntries)}
                 onPriorityChange={updateEntryPriority}
+                onShaderKindChange={setShaderKind}
+                onRequestDelete={setPendingDeleteEntry}
+              />
+            </TabsContent>
+
+            <TabsContent value="shaders" className="mt-4 space-y-3">
+              <p className="font-serif text-sm leading-relaxed text-foreground/65">
+                Shader packages are listed and synced apart from the data
+                packages. <strong>Post-processing</strong> packages (
+                <code>shaders/*.omwfx</code>) are added after the data
+                packages; choose which run in the instance settings&apos;
+                post-processing tab. <strong>Core shaders</strong> (
+                <code>resources/shaders</code>, like PBR shaders) replace
+                TES3MP-NG&apos;s own shaders in each player&apos;s install, in
+                this order; disabling or removing one gives the original
+                shaders back. Only enable one core shader set unless they are
+                made to work together.
+              </p>
+              <DirectoryList
+                initialLoading={initialLoading}
+                loadOrder={loadOrder}
+                sortedEntries={shaderEntries}
+                deletingEntryId={deletingEntryId}
+                emptyMessage="No shader packages. Packages with post-processing shaders or core shaders are found when you rescan, or choose a package's type in the Directories tab."
+                onToggle={toggleEntry}
+                {...listHandlers(shaderEntries)}
+                onPriorityChange={updateEntryPriority}
+                onShaderKindChange={setShaderKind}
                 onRequestDelete={setPendingDeleteEntry}
               />
             </TabsContent>
@@ -683,22 +743,29 @@ function DirectoryList({
   loadOrder,
   sortedEntries,
   deletingEntryId,
+  emptyMessage,
   onToggle,
   onMoveUp,
   onMoveDown,
   onReorder,
   onPriorityChange,
+  onShaderKindChange,
   onRequestDelete,
 }: {
   initialLoading: boolean;
   loadOrder: LoadOrder | null;
   sortedEntries: LoadOrderEntry[];
   deletingEntryId: string | null;
+  emptyMessage: string;
   onToggle: (id: string) => void;
   onMoveUp: (index: number) => void;
   onMoveDown: (index: number) => void;
   onReorder: (fromIndex: number, toIndex: number) => void;
   onPriorityChange: (entryId: string, rawPriority: string) => void;
+  onShaderKindChange: (
+    entryId: string,
+    shaderKind: ShaderPackageKind | null,
+  ) => void;
   onRequestDelete: (entry: LoadOrderEntry) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -750,8 +817,7 @@ function DirectoryList({
   if (sortedEntries.length === 0) {
     return (
       <p className="font-serif text-base leading-relaxed text-foreground/65">
-        No packages found. Add mod folders directly in the instance data
-        directory, then rescan.
+        {emptyMessage}
       </p>
     );
   }
@@ -784,6 +850,7 @@ function DirectoryList({
                 onMoveUp={() => onMoveUp(index)}
                 onMoveDown={() => onMoveDown(index)}
                 onPriorityChange={(value) => onPriorityChange(entry.id, value)}
+                onShaderKindChange={(kind) => onShaderKindChange(entry.id, kind)}
                 onRequestDelete={() => onRequestDelete(entry)}
               />
             ))}
@@ -805,6 +872,7 @@ function DirectoryList({
               onMoveUp={() => {}}
               onMoveDown={() => {}}
               onPriorityChange={() => {}}
+              onShaderKindChange={() => {}}
               onRequestDelete={() => {}}
             />
           </div>
@@ -823,6 +891,7 @@ function SortableDirectoryRow({
   onMoveUp,
   onMoveDown,
   onPriorityChange,
+  onShaderKindChange,
   onRequestDelete,
 }: {
   entry: LoadOrderEntry;
@@ -833,6 +902,7 @@ function SortableDirectoryRow({
   onMoveUp: () => void;
   onMoveDown: () => void;
   onPriorityChange: (rawPriority: string) => void;
+  onShaderKindChange: (shaderKind: ShaderPackageKind | null) => void;
   onRequestDelete: () => void;
 }) {
   const {
@@ -865,6 +935,7 @@ function SortableDirectoryRow({
         onMoveUp={onMoveUp}
         onMoveDown={onMoveDown}
         onPriorityChange={onPriorityChange}
+        onShaderKindChange={onShaderKindChange}
         onRequestDelete={onRequestDelete}
       />
     </div>
@@ -1293,6 +1364,7 @@ function DirectoryRowShell({
   onMoveUp,
   onMoveDown,
   onPriorityChange,
+  onShaderKindChange,
   onRequestDelete,
 }: {
   entry: LoadOrderEntry;
@@ -1305,6 +1377,7 @@ function DirectoryRowShell({
   onMoveUp: () => void;
   onMoveDown: () => void;
   onPriorityChange: (rawPriority: string) => void;
+  onShaderKindChange: (shaderKind: ShaderPackageKind | null) => void;
   onRequestDelete: () => void;
 }) {
   return (
@@ -1340,12 +1413,11 @@ function DirectoryRowShell({
         disabled={isOverlay}
         onCommit={onPriorityChange}
       />
-      <Badge
-        variant="outline"
-        className="hidden shrink-0 text-xs uppercase sm:inline-flex"
-      >
-        {entry.kind}
-      </Badge>
+      <PackageTypeSelect
+        entry={entry}
+        disabled={isOverlay || deleting}
+        onChange={onShaderKindChange}
+      />
       <div className="flex shrink-0 gap-1">
         <Button
           type="button"
@@ -1378,5 +1450,45 @@ function DirectoryRowShell({
         </Button>
       </div>
     </div>
+  );
+}
+
+const DATA_PACKAGE = "data";
+
+/** A package's type: a data package (mod or replacer), or a kind of shader package. */
+function PackageTypeSelect({
+  entry,
+  disabled,
+  onChange,
+}: {
+  entry: LoadOrderEntry;
+  disabled: boolean;
+  onChange: (shaderKind: ShaderPackageKind | null) => void;
+}) {
+  return (
+    <Select
+      value={entry.shaderKind ?? DATA_PACKAGE}
+      disabled={disabled}
+      onValueChange={(value) =>
+        onChange(
+          value === DATA_PACKAGE ? null : (value as ShaderPackageKind),
+        )
+      }
+    >
+      <SelectTrigger
+        size="sm"
+        aria-label={`Type of ${entry.name}`}
+        className="hidden w-36 shrink-0 text-xs sm:flex"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent position="popper">
+        <SelectItem value={DATA_PACKAGE}>
+          {entry.kind === "mod" ? "Mod" : "Replacer"}
+        </SelectItem>
+        <SelectItem value="postProcessing">Post-processing</SelectItem>
+        <SelectItem value="coreShaders">Core shaders</SelectItem>
+      </SelectContent>
+    </Select>
   );
 }

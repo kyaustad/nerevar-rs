@@ -4,6 +4,7 @@ import type { InstanceSettings } from "./InstanceSettings";
 import type { ManifestPackage } from "./ManifestPackage";
 import type { RequiredDataFileEntry } from "./RequiredDataFileEntry";
 import type { ResolvedOpenMwConfig } from "./ResolvedOpenMwConfig";
+import type { ShaderManifest } from "./ShaderManifest";
 
 export type NerevarManifest = {
   version: number;
@@ -34,4 +35,8 @@ export type NerevarManifest = {
    * Seeded into clients' `config/` folder (see `SYNCED_CLIENT_FILES`).
    */
   clientFiles: Array<ClientConfigFile>;
+  /**
+   * Shader packages, listed and synced apart from `packages`.
+   */
+  shaders: ShaderManifest;
 };

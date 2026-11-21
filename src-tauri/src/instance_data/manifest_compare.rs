@@ -7,12 +7,17 @@ pub fn manifests_differ(local: &NerevarManifest, remote: &NerevarManifest) -> bo
     if local.total_download_bytes != remote.total_download_bytes {
         return true;
     }
-    if local.packages.len() != remote.packages.len() {
+    if local.shaders.total_download_bytes != remote.shaders.total_download_bytes {
+        return true;
+    }
+    if local.packages.len() != remote.packages.len()
+        || local.shaders.packages.len() != remote.shaders.packages.len()
+    {
         return true;
     }
 
-    let mut local_packages: Vec<_> = local.packages.iter().collect();
-    let mut remote_packages: Vec<_> = remote.packages.iter().collect();
+    let mut local_packages: Vec<_> = local.all_packages().collect();
+    let mut remote_packages: Vec<_> = remote.all_packages().collect();
     local_packages.sort_by_key(|p| &p.id);
     remote_packages.sort_by_key(|p| &p.id);
 
@@ -21,6 +26,7 @@ pub fn manifests_differ(local: &NerevarManifest, remote: &NerevarManifest) -> bo
             || left.tree_checksum != right.tree_checksum
             || left.file_count != right.file_count
             || left.total_size_bytes != right.total_size_bytes
+            || left.shader_kind != right.shader_kind
         {
             return true;
         }

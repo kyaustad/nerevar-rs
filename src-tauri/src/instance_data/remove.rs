@@ -123,6 +123,7 @@ mod tests {
         write_load_order(
             &data_dir,
             vec![LoadOrderEntry {
+                shader_kind: None,
                 id: "entry-1".into(),
                 name: "Sample Mod".into(),
                 kind: PackageKind::Mod,

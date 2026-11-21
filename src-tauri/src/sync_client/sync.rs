@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter, State};
 use crate::data::InstanceConfig;
 use crate::instance_data::{
     find_instance_by_id, load_manifest, manifest_path, manifests_differ, resolve_package_data_dir,
-    validate_manifest_against_disk, ManifestValidationResult, NerevarManifest,
+    validate_manifest_against_disk, ManifestValidationResult, NerevarManifest, SyncSection,
 };
 use crate::instance_setup::instance_tes3mp_dir;
 use crate::AppState;
@@ -198,18 +198,38 @@ async fn sync_if_needed_inner(
 
     persist_manifest(data_dir, &remote)?;
 
-    let download_result = download_manifest_files(
+    // The data packages, then the shader packages
+    let mut download_result = download_manifest_files(
         app.clone(),
         instance_id,
         host,
         port,
         sync_password,
         data_dir,
-        &remote,
+        &remote.sync_section(SyncSection::Data),
+        SyncSection::Data,
         force,
         cancel.clone(),
     )
     .await?;
+    if matches!(download_result, DownloadOutcome::Complete { .. }) && !remote.shaders.packages.is_empty() {
+        let shaders = download_manifest_files(
+            app.clone(),
+            instance_id,
+            host,
+            port,
+            sync_password,
+            data_dir,
+            &remote.sync_section(SyncSection::Shaders),
+            SyncSection::Shaders,
+            force,
+            cancel.clone(),
+        )
+        .await?;
+        if let DownloadOutcome::Cancelled { .. } = shaders {
+            download_result = shaders;
+        }
+    }
 
     match download_result {
         DownloadOutcome::Complete { bytes_done } => {

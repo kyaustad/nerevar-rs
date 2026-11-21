@@ -11,7 +11,7 @@ use serde::Serialize;
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
-use crate::instance_data::{load_manifest, manifest_path};
+use crate::instance_data::{load_manifest, manifest_path, SyncSection};
 use crate::instance_setup::{instance_tes3mp_dir, read_tes3mp_server_settings};
 use crate::nerevar_server::state::ServerContext;
 use crate::sync_auth::{sync_password_matches, SYNC_PASSWORD_HEADER};
@@ -50,6 +50,10 @@ pub fn router() -> Router<Arc<ServerContext>> {
         .route(
             "/packages/{package_id}/files/{*file_path}",
             get(serve_package_file),
+        )
+        .route(
+            "/shaders/{package_id}/files/{*file_path}",
+            get(serve_shader_file),
         )
 }
 
@@ -217,8 +221,26 @@ async fn serve_package_file(
     headers: HeaderMap,
     AxumPath((package_id, file_path)): AxumPath<(String, String)>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    verify_sync_password(&state, &headers)?;
-    let data_dir = hosting_data_dir(&state).await?;
+    serve_file(&state, &headers, SyncSection::Data, package_id, file_path).await
+}
+
+async fn serve_shader_file(
+    State(state): State<Arc<ServerContext>>,
+    headers: HeaderMap,
+    AxumPath((package_id, file_path)): AxumPath<(String, String)>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    serve_file(&state, &headers, SyncSection::Shaders, package_id, file_path).await
+}
+
+async fn serve_file(
+    state: &ServerContext,
+    headers: &HeaderMap,
+    section: SyncSection,
+    package_id: String,
+    file_path: String,
+) -> Result<Body, (StatusCode, String)> {
+    verify_sync_password(state, headers)?;
+    let data_dir = hosting_data_dir(state).await?;
 
     let relative = normalize_manifest_file_path(&file_path).map_err(|reason| {
         (
@@ -227,7 +249,7 @@ async fn serve_package_file(
         )
     })?;
 
-    let resolved = get_package_file_path(&state.manifest_cache, &data_dir, &package_id, &relative)
+    let resolved = get_package_file_path(&state.manifest_cache, &data_dir, section, &package_id, &relative)
         .map_err(|e| (StatusCode::NOT_FOUND, e))?;
 
     let Some((data_root, relative_path)) = resolved else {

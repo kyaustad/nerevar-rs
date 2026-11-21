@@ -10,7 +10,7 @@ use tokio::fs::{self, File};
 use tokio::io::AsyncWriteExt;
 use tokio::task::JoinSet;
 
-use crate::instance_data::{package_abs_path, ManifestFileEntry, NerevarManifest};
+use crate::instance_data::{package_abs_path, ManifestFileEntry, NerevarManifest, SyncSection};
 use crate::sync_paths::normalize_manifest_file_path;
 use crate::sync_auth::SYNC_PASSWORD_HEADER;
 
@@ -150,6 +150,7 @@ fn manifest_file_count(manifest: &NerevarManifest) -> u64 {
 fn collect_download_jobs(
     data_dir: &Path,
     manifest: &NerevarManifest,
+    section: SyncSection,
     host: &str,
     port: u16,
     force: bool,
@@ -184,8 +185,9 @@ fn collect_download_jobs(
                 })?;
 
             let url = format!(
-                "{}/packages/{}/files/{}",
+                "{}/{}/{}/files/{}",
                 base,
+                section.route(),
                 urlencoding::encode(&package.id),
                 encode_path_segments(&normalized_path)
             );
@@ -303,6 +305,16 @@ async fn download_one_file(
     Ok(downloaded)
 }
 
+/// Sync phases and wording of a section's download.
+fn section_phases(section: SyncSection) -> (SyncPhase, SyncPhase, &'static str) {
+    match section {
+        SyncSection::Data => (SyncPhase::VerifyingExisting, SyncPhase::Downloading, "files"),
+        SyncSection::Shaders => (SyncPhase::VerifyingShaders, SyncPhase::DownloadingShaders, "shader files"),
+    }
+}
+
+/// Download one section of the manifest: `manifest` is `NerevarManifest::sync_section(section)`.
+/// Both sections keep their progress in the instance's sync state.
 pub async fn download_manifest_files(
     app: AppHandle,
     instance_id: &str,
@@ -311,12 +323,15 @@ pub async fn download_manifest_files(
     sync_password: Option<&str>,
     data_dir: &Path,
     manifest: &NerevarManifest,
+    section: SyncSection,
     force: bool,
     cancel: Arc<AtomicBool>,
 ) -> Result<DownloadOutcome, String> {
-    if force {
+    // Forced syncs start over once, with the data packages
+    if force && section == SyncSection::Data {
         clear_sync_state(data_dir)?;
     }
+    let (verify_phase, download_phase, noun) = section_phases(section);
 
     let state = SharedSyncState::load(data_dir, manifest)?;
     let manifest_files_total = manifest_file_count(manifest);
@@ -330,9 +345,9 @@ pub async fn download_manifest_files(
         emit_sync_progress(
             &app,
             instance_id,
-            SyncPhase::VerifyingExisting,
+            verify_phase,
             format!(
-                "Verifying files already on disk ({} concurrent)",
+                "Verifying {noun} already on disk ({} concurrent)",
                 rayon::current_num_threads()
             ),
             verified_bytes,
@@ -359,8 +374,8 @@ pub async fn download_manifest_files(
                         &throttler_for_adopt,
                         &app_for_adopt,
                         &instance_for_adopt,
-                        SyncPhase::VerifyingExisting,
-                        format!("Verified {files_done}/{files_total} files on disk"),
+                        verify_phase,
+                        format!("Verified {files_done}/{files_total} {noun} on disk"),
                         bytes_done,
                         bytes_total,
                         files_done,
@@ -376,7 +391,7 @@ pub async fn download_manifest_files(
     }
 
     let completed = state.completed_snapshot();
-    let jobs = collect_download_jobs(data_dir, manifest, host, port, force, &completed)?;
+    let jobs = collect_download_jobs(data_dir, manifest, section, host, port, force, &completed)?;
     let skipped_bytes = count_verified_bytes(manifest, &completed);
     let bytes_done = Arc::new(AtomicU64::new(skipped_bytes));
     let files_done = Arc::new(AtomicU64::new(0));
@@ -385,18 +400,18 @@ pub async fn download_manifest_files(
     emit_sync_progress(
         &app,
         instance_id,
-        SyncPhase::Downloading,
+        download_phase,
         if jobs.is_empty() {
-            "All files already verified".to_string()
+            format!("All {noun} already verified")
         } else if files_already_verified > 0 {
             format!(
-                "Resuming download — {} files remaining ({} concurrent)",
+                "Resuming download — {} {noun} remaining ({} concurrent)",
                 jobs.len(),
                 MAX_CONCURRENT_DOWNLOADS
             )
         } else {
             format!(
-                "Downloading {} files ({} concurrent)",
+                "Downloading {} {noun} ({} concurrent)",
                 jobs.len(),
                 MAX_CONCURRENT_DOWNLOADS
             )
@@ -437,6 +452,7 @@ pub async fn download_manifest_files(
             manifest_files_total,
             bytes_total,
             progress_throttler.clone(),
+            download_phase,
         );
     }
 
@@ -486,8 +502,8 @@ pub async fn download_manifest_files(
     emit_sync_progress(
         &app,
         instance_id,
-        SyncPhase::Downloading,
-        "Download complete",
+        download_phase,
+        format!("Downloaded all {noun}"),
         bytes_done.load(Ordering::Relaxed),
         bytes_total,
         manifest_files_total,
@@ -515,6 +531,7 @@ fn spawn_download_worker(
     manifest_file_count: u64,
     bytes_total: u64,
     progress_throttler: Arc<ProgressThrottler>,
+    phase: SyncPhase,
 ) {
     let files_remaining = queue.jobs.len() as u64;
     let files_already_verified = manifest_file_count.saturating_sub(files_remaining);
@@ -541,7 +558,7 @@ fn spawn_download_worker(
                 &progress_throttler,
                 &app,
                 &instance_id,
-                SyncPhase::Downloading,
+                phase,
                 format!("Downloaded {files_done_total}/{manifest_file_count} files"),
                 done,
                 bytes_total,
@@ -598,6 +615,7 @@ mod tests {
         tes3mp_release_tag: None,
         tes3mp_server_address: None,
         client_files: Vec::new(),
+        shaders: Default::default(),
             generated_at: "2026-01-01T00:00:00Z".into(),
             base_game_data: None,
             packages,
@@ -627,6 +645,7 @@ mod tests {
             file_count: files.len() as u32,
             files,
             plugins: vec![],
+            shader_kind: None,
         }
     }
 
@@ -660,7 +679,8 @@ mod tests {
 
         let state = SharedSyncState::load(&data_dir, &manifest).unwrap();
         let completed = state.completed_snapshot();
-        let jobs = collect_download_jobs(&data_dir, &manifest, "127.0.0.1", 8080, false, &completed).unwrap();
+        let jobs = collect_download_jobs(&data_dir, &manifest, SyncSection::Data, "127.0.0.1", 8080, false, &completed)
+            .unwrap();
         assert!(jobs.is_empty());
 
         let _ = fs::remove_dir_all(&data_dir);

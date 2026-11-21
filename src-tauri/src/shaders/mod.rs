@@ -1,6 +1,8 @@
 //! OpenMW post-processing shaders (`shaders/*.omwfx`) available to an instance, and the
 //! post-processing setup of the instance's own game, which hosts tune in-game (F2).
 
+pub mod packages;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -87,19 +89,7 @@ fn add_shaders(by_name: &mut BTreeMap<String, ShaderInfo>, dir: &Path, source: &
     }
 }
 
-/// A child folder by name, ignoring case (mods ship `Shaders/` or `shaders/`).
-fn find_child_dir(dir: &Path, name: &str) -> Option<PathBuf> {
-    std::fs::read_dir(dir)
-        .ok()?
-        .flatten()
-        .map(|entry| entry.path())
-        .find(|path| {
-            path.is_dir()
-                && path
-                    .file_name()
-                    .is_some_and(|file| file.to_string_lossy().eq_ignore_ascii_case(name))
-        })
-}
+use packages::find_child_dir;
 
 /// The post-processing setup of a TES3MP-NG install's own game.
 fn game_post_processing(config_dir: &Path) -> (Option<String>, Option<bool>, Option<String>) {

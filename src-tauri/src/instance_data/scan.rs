@@ -58,6 +58,7 @@ pub fn scan_data_directory(
 
         let plugins = find_plugins(&path);
         let kind = classify_package(&path, &plugins);
+        let shader_kind = crate::shaders::packages::detect_shader_kind(&path, &plugins);
 
         packages.push(ScannedPackage {
             name: folder_name.clone(),
@@ -65,6 +66,7 @@ pub fn scan_data_directory(
             relative_dir: folder_name,
             plugins,
             tree_checksum: None,
+            shader_kind,
         });
     }
 

@@ -9,6 +9,9 @@ pub enum SyncPhase {
     VerifyingExisting,
     FetchingManifest,
     Downloading,
+    /// Shader packages are synced after the data packages.
+    VerifyingShaders,
+    DownloadingShaders,
     ApplyingLoadOrder,
     Validating,
     WritingLaunchCfg,

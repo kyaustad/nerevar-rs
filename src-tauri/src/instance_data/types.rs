@@ -3,9 +3,11 @@ use ts_rs::TS;
 
 use crate::instance_settings::InstanceSettings;
 
-pub const LOAD_ORDER_VERSION: u32 = 1;
+/// 2: shader packages are marked with their `shader_kind`.
+pub const LOAD_ORDER_VERSION: u32 = 2;
 /// 2: TES3MP-NG. Adds the host's release, description, game address and client config files.
-pub const MANIFEST_VERSION: u32 = 2;
+/// 3: shader packages are listed and synced separately, in `shaders`.
+pub const MANIFEST_VERSION: u32 = 3;
 
 /// Files of the host's TES3MP-NG `config/` folder that are seeded on synced clients, such as the
 /// post-processing shader settings. Only plain names from this list are accepted.
@@ -26,6 +28,20 @@ pub struct ClientConfigFile {
 pub enum PackageKind {
     Mod,
     Replacer,
+}
+
+/// Shader packages are kept apart from the data packages: they are listed and synced separately, and are
+/// installed by kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ShaderPackageKind {
+    /// Post-processing shaders (`shaders/*.omwfx` and their textures and scripts), which OpenMW loads from
+    /// its data folders. They are added after the data packages.
+    PostProcessing,
+    /// Replacements for OpenMW's own shaders (`resources/shaders`, such as PBR shaders). OpenMW only reads
+    /// those from its install, so they are copied over the install's shaders instead of being a data folder.
+    CoreShaders,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -51,6 +67,15 @@ pub struct LoadOrderEntry {
     pub plugins: Vec<PluginEntry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tree_checksum: Option<String>,
+    /// Set for shader packages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shader_kind: Option<ShaderPackageKind>,
+}
+
+impl LoadOrderEntry {
+    pub fn is_core_shaders(&self) -> bool {
+        self.shader_kind == Some(ShaderPackageKind::CoreShaders)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -100,6 +125,18 @@ pub struct ManifestPackage {
     pub files: Vec<ManifestFileEntry>,
     #[serde(default)]
     pub plugins: Vec<PluginEntry>,
+    /// Set for the packages in `NerevarManifest::shaders`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shader_kind: Option<ShaderPackageKind>,
+}
+
+/// The instance's shader packages, synced after the data packages.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ShaderManifest {
+    pub packages: Vec<ManifestPackage>,
+    pub total_download_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -144,6 +181,44 @@ pub struct NerevarManifest {
     /// Seeded into clients' `config/` folder (see `SYNCED_CLIENT_FILES`).
     #[serde(default)]
     pub client_files: Vec<ClientConfigFile>,
+    /// Shader packages, listed and synced apart from `packages`.
+    #[serde(default)]
+    pub shaders: ShaderManifest,
+}
+
+impl NerevarManifest {
+    /// Data and shader packages.
+    pub fn all_packages(&self) -> impl Iterator<Item = &ManifestPackage> {
+        self.packages.iter().chain(self.shaders.packages.iter())
+    }
+
+    /// The manifest with only its data packages, or only its shader packages, for syncing each on its own.
+    pub fn sync_section(&self, section: SyncSection) -> NerevarManifest {
+        let mut view = self.clone();
+        view.shaders = ShaderManifest::default();
+        if section == SyncSection::Shaders {
+            view.packages = self.shaders.packages.clone();
+            view.total_download_bytes = self.shaders.total_download_bytes;
+        }
+        view
+    }
+}
+
+/// The parts of an instance that are synced one after the other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncSection {
+    Data,
+    Shaders,
+}
+
+impl SyncSection {
+    /// The host's route for the section's files.
+    pub fn route(self) -> &'static str {
+        match self {
+            SyncSection::Data => "packages",
+            SyncSection::Shaders => "shaders",
+        }
+    }
 }
 
 fn default_required_data_files() -> Vec<RequiredDataFileEntry> {
@@ -189,4 +264,6 @@ pub struct ScannedPackage {
     pub plugins: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tree_checksum: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shader_kind: Option<ShaderPackageKind>,
 }

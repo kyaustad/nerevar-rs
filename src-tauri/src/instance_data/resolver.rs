@@ -19,8 +19,14 @@ pub fn resolve_load_order(
         }
     }
 
-    let mut enabled_entries: Vec<_> = load_order.entries.iter().filter(|e| e.enabled).collect();
-    enabled_entries.sort_by_key(|e| e.priority);
+    // Core shaders replace the install's own shaders instead (see `shaders::packages`), and
+    // post-processing shaders come after the data packages
+    let mut enabled_entries: Vec<_> = load_order
+        .entries
+        .iter()
+        .filter(|e| e.enabled && !e.is_core_shaders())
+        .collect();
+    enabled_entries.sort_by_key(|e| (e.shader_kind.is_some(), e.priority));
 
     for entry in &enabled_entries {
         data_paths.push(package_abs_path(data_dir, &entry.relative_dir));
@@ -209,6 +215,7 @@ mod tests {
                     priority: 10,
                     plugins: vec![],
                     tree_checksum: None,
+                    shader_kind: None,
                 },
                 LoadOrderEntry {
                     id: "2".into(),
@@ -219,6 +226,7 @@ mod tests {
                     priority: 20,
                     plugins: vec![],
                     tree_checksum: None,
+                    shader_kind: None,
                 },
             ],
         };
@@ -245,6 +253,7 @@ mod tests {
             base_game_data: None,
             content_order: None,
             entries: vec![LoadOrderEntry {
+                shader_kind: None,
                 id: "1".into(),
                 name: "Better Bodies".into(),
                 kind: PackageKind::Mod,
@@ -264,6 +273,7 @@ mod tests {
             tes3mp_release_tag: None,
             tes3mp_server_address: None,
             client_files: Vec::new(),
+            shaders: Default::default(),
             generated_at: String::new(),
             base_game_data: None,
             packages: vec![],

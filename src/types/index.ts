@@ -56,6 +56,7 @@ export * from "./ShaderPackageKind";
 export * from "./ConflictWith";
 export * from "./MomwFailedMod";
 export * from "./MomwInstallReport";
+export * from "./MomwLeftOutPlugin";
 export * from "./MomwManualMod";
 export * from "./MomwModlistSummary";
 export * from "./NexusAccountStatus";

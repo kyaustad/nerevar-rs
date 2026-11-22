@@ -36,6 +36,17 @@ pub struct MomwManualMod {
     pub reason: String,
     /// Where to extract it, relative to the instance's data folder.
     pub folder: String,
+    /// The downloads folder key of the archive the player adds for it (`momw_add_manual_archive`)
+    pub key: String,
+}
+
+/// A plugin of the list turned off because a master it needs isn't installed.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MomwLeftOutPlugin {
+    pub plugin: String,
+    pub master: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -60,7 +71,33 @@ pub struct MomwInstallReport {
     pub failed: Vec<MomwFailedMod>,
     /// Mods installed again because their files were changed or missing
     pub repaired: Vec<String>,
+    /// Plugins turned off until the mods with their masters are installed
+    #[serde(default)]
+    pub left_out: Vec<MomwLeftOutPlugin>,
     pub notes: Vec<String>,
+    #[serde(default)]
+    pub beta: bool,
+}
+
+/// The report of the instance's last modlist install, to show until its problems are fixed.
+pub fn last_report(data_dir: &Path) -> Option<MomwInstallReport> {
+    load_state(data_dir).last_report
+}
+
+/// Keeps an archive the player downloaded for a mod of the list in the downloads folder, under the mod's key: the
+/// next install of the list installs it like any other download, and so do installs into other instances.
+pub fn add_manual_archive(downloads_dir: PathBuf, key: &str, archive: &Path) -> Result<(), String> {
+    if !key.starts_with("manual:") {
+        return Err("Not a mod to download by hand".into());
+    }
+    let downloads = super::downloads::Downloads::open(downloads_dir)?;
+    let file_name = archive.file_name().ok_or("Invalid archive path")?.to_string_lossy().into_owned();
+    let target = downloads.path_for(key, &file_name);
+    if target != archive {
+        std::fs::copy(archive, &target)
+            .map_err(|e| format!("Failed to copy {} to {}: {e}", archive.display(), target.display()))?;
+    }
+    downloads.record(key, &target)
 }
 
 /// What an earlier install put into the instance.
@@ -80,6 +117,8 @@ struct InstallState {
     /// tes3cmd commands that ran (see `tools::Clean::key`), so commands that change plugins in place run once
     #[serde(default)]
     cleaned: std::collections::BTreeSet<String>,
+    #[serde(default)]
+    last_report: Option<MomwInstallReport>,
 }
 
 /// File count and size of a mod's folders: changes when files go missing or change size.
@@ -541,10 +580,7 @@ fn apply_config(
     }
     let names: Vec<&str> = content.iter().map(String::as_str).collect();
     let (wanted, dropped) = super::tools::loadable_content(&names, &files);
-    if !dropped.is_empty() {
-        let list: Vec<String> = dropped.iter().map(|(plugin, master)| format!("{plugin} (needs {master})")).collect();
-        report.notes.push(format!("Left out plugins whose masters aren't installed: {}", list.join(", ")));
-    }
+    report.left_out = dropped.into_iter().map(|(plugin, master)| MomwLeftOutPlugin { plugin, master }).collect();
 
     let mut list_entries = Vec::new();
     let mut seen = HashSet::new();
@@ -707,26 +743,28 @@ pub async fn install_modlist(
         );
         let mut downloads = Vec::new();
         let mut manual = None;
-        for info in &item.download_info {
-            match resolver.resolve(item, info).await {
-                Ok(Source::Download(download)) => downloads.push((info.clone(), download)),
-                Ok(Source::Manual(reason)) => {
-                    manual = Some(reason);
-                    break;
+        for (index, info) in item.download_info.iter().enumerate() {
+            let reason = match resolver.resolve(item, info).await {
+                Ok(Source::Download(download)) => {
+                    downloads.push((info.clone(), download));
+                    continue;
                 }
-                Err(error) => {
-                    manual = Some(error);
-                    break;
-                }
+                Ok(Source::Manual(reason)) => reason,
+                Err(error) => error,
+            };
+            // A file the player downloaded and added for it
+            let key = format!("manual:{}:{index}", item.slug);
+            if let Some(path) = store.cached(&key, None) {
+                let file_name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                downloads.push((info.clone(), Download { url: String::new(), file_name, version: key, size: None, nexus: None }));
+                continue;
             }
+            let folder = format!("{}/{}", item.category, info.extract_to.clone().unwrap_or_else(|| item.dir.clone()));
+            manual = Some(MomwManualMod { name: item.name.clone(), url: item.url.clone(), reason, folder, key });
+            break;
         }
-        if let Some(reason) = manual {
-            let folder = format!(
-                "{}/{}",
-                item.category,
-                item.download_info.first().and_then(|i| i.extract_to.clone()).unwrap_or_else(|| item.dir.clone())
-            );
-            report.manual.push(MomwManualMod { name: item.name.clone(), url: item.url.clone(), reason, folder });
+        if let Some(manual) = manual {
+            report.manual.push(manual);
             continue;
         }
         // Up to date: the same files, and its folders as the install left them (else it's repaired)
@@ -899,6 +937,9 @@ pub async fn install_modlist(
     })
     .await
     .map_err(|e| e.to_string())??;
+    let (mut state, mut report) = (state, report);
+    report.beta = beta;
+    state.last_report = Some(report.clone());
     save_state(&data_dir, &state)?;
     emit(BackgroundOperationPhase::Complete, "Modlist installed".into(), 1, 1, None);
     Ok(report)
@@ -1024,7 +1065,15 @@ mod live {
         let downloads = std::env::var("NEREVAR_LIVE_DOWNLOADS")
             .map(PathBuf::from)
             .unwrap_or_else(|_| super::super::downloads::default_dir());
-        let report = install_modlist(dir, downloads, slug, false, false, None, cancel).await.expect("install failed");
+        let report =
+            install_modlist(dir.clone(), downloads, slug, false, false, None, cancel).await.expect("install failed");
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
+
+        // What the client's openmw.cfg gets
+        let resolved = crate::instance_data::resolve_instance_openmw_config(&dir).expect("resolve failed");
+        println!("client content files: {}", resolved.content.len());
+        for name in ["Clean_imperial_skirt.esp", "ImmersiveImperialSkirtBCOMpatch.esp", "delta-merged.omwaddon"] {
+            println!("  {name}: {}", resolved.content.iter().any(|c| c.eq_ignore_ascii_case(name)));
+        }
     }
 }

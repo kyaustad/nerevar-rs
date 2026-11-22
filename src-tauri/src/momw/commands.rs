@@ -96,12 +96,49 @@ fn log_report(instance: &str, slug: &str, downloads: &std::path::Path, result: &
     for item in &report.manual {
         warn!("  manual: {item:?}");
     }
+    for item in &report.left_out {
+        warn!("  left out: {} (needs {})", item.plugin, item.master);
+    }
     for item in &report.failed {
         warn!("  failed: {item:?}");
     }
     for note in &report.notes {
         warn!("  note: {note}");
     }
+}
+
+/// The report of the instance's last modlist install, if there was one.
+#[tauri::command]
+pub fn momw_last_report(
+    state: State<'_, Mutex<AppState>>,
+    instance_id: String,
+) -> Result<Option<MomwInstallReport>, String> {
+    let data_dir = {
+        let guard = state.lock().map_err(|_| "App state lock poisoned".to_string())?;
+        let instance = find_instance_by_id(&guard.nerevar_config, &instance_id)
+            .ok_or_else(|| format!("Instance not found: {instance_id}"))?;
+        resolve_package_data_dir(instance)
+    };
+    Ok(super::install::last_report(&data_dir))
+}
+
+/// Adds an archive the player downloaded for a mod of a list (`MomwManualMod::key`) to the downloads folder; the
+/// next install of the list installs it.
+#[tauri::command]
+pub async fn momw_add_manual_archive(
+    state: State<'_, Mutex<AppState>>,
+    key: String,
+    archive: String,
+) -> Result<(), String> {
+    let downloads_dir = {
+        let guard = state.lock().map_err(|_| "App state lock poisoned".to_string())?;
+        crate::config::nerevar_config::downloads_dir(&guard.nerevar_config)
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        super::install::add_manual_archive(downloads_dir, &key, std::path::Path::new(&archive))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// The downloads folder of modlist installs.

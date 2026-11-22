@@ -19,7 +19,14 @@ export type BackgroundOperationKind =
   | "installArchive"
   | "installModlist";
 
-export type BackgroundOperationStatus = "running" | "success" | "error";
+/** "attention": it finished, but left the player something to do (`action`) */
+export type BackgroundOperationStatus =
+  | "running"
+  | "success"
+  | "attention"
+  | "error";
+
+export type BackgroundOperationAction = { label: string; href: string };
 
 export type BackgroundOperationProgress = {
   phase: BackgroundOperationProgressEvent["phase"];
@@ -38,6 +45,7 @@ export type BackgroundOperation = {
   status: BackgroundOperationStatus;
   detail?: string;
   progress?: BackgroundOperationProgress;
+  action?: BackgroundOperationAction;
   startedAt: number;
 };
 
@@ -57,6 +65,10 @@ type RunOperationOptions<T> = {
   kind: BackgroundOperationKind;
   detail?: string;
   task: (operationId: string) => Promise<T>;
+  /** What the player still has to do after the result, kept on screen until dismissed */
+  attention?: (
+    result: T,
+  ) => { detail: string; action: BackgroundOperationAction } | null;
 };
 
 type BackgroundOperationContextValue = {
@@ -126,9 +138,29 @@ export function BackgroundOperationProvider({
 
       try {
         const result = await options.task(id);
+        const attention = options.attention?.(result);
+        if (attention) {
+          setActiveOperation((current) =>
+            current?.id === id
+              ? {
+                  ...current,
+                  status: "attention",
+                  detail: attention.detail,
+                  action: attention.action,
+                  progress: undefined,
+                }
+              : current,
+          );
+          return result;
+        }
         setActiveOperation((current) =>
           current?.id === id
-            ? { ...current, status: "success", detail: undefined, progress: undefined }
+            ? {
+                ...current,
+                status: "success",
+                detail: undefined,
+                progress: undefined,
+              }
             : current,
         );
         window.setTimeout(() => {
@@ -141,7 +173,12 @@ export function BackgroundOperationProvider({
         const message = String(error);
         setActiveOperation((current) =>
           current?.id === id
-            ? { ...current, status: "error", detail: message, progress: undefined }
+            ? {
+                ...current,
+                status: "error",
+                detail: message,
+                progress: undefined,
+              }
             : current,
         );
         throw error;

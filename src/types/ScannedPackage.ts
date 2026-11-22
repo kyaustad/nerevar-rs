@@ -2,11 +2,4 @@
 import type { PackageKind } from "./PackageKind";
 import type { ShaderPackageKind } from "./ShaderPackageKind";
 
-export type ScannedPackage = {
-  name: string;
-  kind: PackageKind;
-  relativeDir: string;
-  plugins: Array<string>;
-  treeChecksum: string | null;
-  shaderKind?: ShaderPackageKind | null;
-};
+export type ScannedPackage = { name: string, kind: PackageKind, relativeDir: string, plugins: Array<string>, treeChecksum: string | null, shaderKind?: ShaderPackageKind | null, };

@@ -4,8 +4,4 @@
  * A synced instance only needs its host: its name, description, TES3MP-NG release, game server and
  * settings are inherited from the host's manifest, and it's installed under the Nerevar root folder.
  */
-export type NewConnectionConfig = {
-  remoteHost: string;
-  remoteSyncPort: number;
-  syncPassword: string;
-};
+export type NewConnectionConfig = { remoteHost: string, remoteSyncPort: number, syncPassword: string, };

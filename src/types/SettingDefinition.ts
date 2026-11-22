@@ -3,13 +3,4 @@ import type { SettingCategory } from "./SettingCategory";
 import type { SettingValue } from "./SettingValue";
 import type { SettingValueType } from "./SettingValueType";
 
-export type SettingDefinition = {
-  key: string;
-  category: SettingCategory;
-  valueType: SettingValueType;
-  label: string;
-  description: string;
-  defaultValue: SettingValue;
-  minInteger?: number | null;
-  maxInteger?: number | null;
-};
+export type SettingDefinition = { key: string, category: SettingCategory, valueType: SettingValueType, label: string, description: string, defaultValue: SettingValue, minInteger?: number, maxInteger?: number, };

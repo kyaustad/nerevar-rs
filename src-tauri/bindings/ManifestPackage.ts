@@ -2,5 +2,10 @@
 import type { ManifestFileEntry } from "./ManifestFileEntry";
 import type { PackageKind } from "./PackageKind";
 import type { PluginEntry } from "./PluginEntry";
+import type { ShaderPackageKind } from "./ShaderPackageKind";
 
-export type ManifestPackage = { id: string, name: string, kind: PackageKind, relativeDir: string, priority: number, treeChecksum: string, totalSizeBytes: bigint, fileCount: number, files: Array<ManifestFileEntry>, plugins: Array<PluginEntry>, };
+export type ManifestPackage = { id: string, name: string, kind: PackageKind, relativeDir: string, priority: number, treeChecksum: string, totalSizeBytes: bigint, fileCount: number, files: Array<ManifestFileEntry>, plugins: Array<PluginEntry>, 
+/**
+ * Set for the packages in `NerevarManifest::shaders`.
+ */
+shaderKind?: ShaderPackageKind | null, };

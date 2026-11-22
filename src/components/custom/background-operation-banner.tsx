@@ -3,7 +3,8 @@ import { Progress } from "@/components/ui/progress";
 import { useBackgroundOperation } from "@/features/instances/context/background-operation-context";
 import { cn } from "@/lib/utils";
 import type { BackgroundOperationPhase } from "@/types";
-import { CheckCircle2, Loader2, X, XCircle } from "lucide-react";
+import { CheckCircle2, Loader2, TriangleAlert, X, XCircle } from "lucide-react";
+import { useLocation } from "wouter";
 
 const PHASE_LABELS: Record<BackgroundOperationPhase, string> = {
   scanningPackages: "Scanning folders",
@@ -25,12 +26,14 @@ const PHASE_LABELS: Record<BackgroundOperationPhase, string> = {
 
 export function BackgroundOperationBanner() {
   const { activeOperation, dismissOperation } = useBackgroundOperation();
+  const [, navigate] = useLocation();
 
   if (!activeOperation) {
     return null;
   }
 
-  const { status, label, instanceName, detail, progress } = activeOperation;
+  const { status, label, instanceName, detail, progress, action } =
+    activeOperation;
   const percent =
     progress && progress.total > 0
       ? Math.min(100, Math.round((progress.step / progress.total) * 100))
@@ -49,7 +52,9 @@ export function BackgroundOperationBanner() {
           ? "border-destructive/30 bg-destructive/10"
           : status === "success"
             ? "border-emerald-500/30 bg-emerald-500/10"
-            : "border-border/40 bg-card/85",
+            : status === "attention"
+              ? "border-amber-500/40 bg-amber-500/10"
+              : "border-border/40 bg-card/85",
       )}
     >
       <div className="flex items-center gap-3">
@@ -75,7 +80,20 @@ export function BackgroundOperationBanner() {
           </span>
         ) : null}
 
-        {status === "error" ? (
+        {status === "attention" && action ? (
+          <Button
+            size="sm"
+            className="h-7 shrink-0 px-2"
+            onClick={() => {
+              dismissOperation();
+              navigate(action.href);
+            }}
+          >
+            {action.label}
+          </Button>
+        ) : null}
+
+        {status === "error" || status === "attention" ? (
           <Button
             variant="outline"
             size="sm"
@@ -105,12 +123,19 @@ export function BackgroundOperationBanner() {
   );
 }
 
-function StatusIcon({ status }: { status: "running" | "success" | "error" }) {
+function StatusIcon({
+  status,
+}: {
+  status: "running" | "success" | "attention" | "error";
+}) {
   if (status === "running") {
     return <Loader2 className="size-3.5 shrink-0 animate-spin text-accent" />;
   }
   if (status === "success") {
     return <CheckCircle2 className="size-3.5 shrink-0 text-emerald-500" />;
+  }
+  if (status === "attention") {
+    return <TriangleAlert className="size-3.5 shrink-0 text-amber-400" />;
   }
   return <XCircle className="size-3.5 shrink-0 text-destructive" />;
 }

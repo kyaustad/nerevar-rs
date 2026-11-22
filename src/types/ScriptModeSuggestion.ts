@@ -2,15 +2,12 @@
 import type { ScriptMode } from "./ScriptMode";
 import type { SuggestionConfidence } from "./SuggestionConfidence";
 
-export type ScriptModeSuggestion = {
-  mode: ScriptMode;
-  confidence: SuggestionConfidence;
-  /**
-   * What the code does that led to the suggestion.
-   */
-  reasons: Array<string>;
-  /**
-   * Things that don't work the same in multiplayer.
-   */
-  warnings: Array<string>;
-};
+export type ScriptModeSuggestion = { mode: ScriptMode, confidence: SuggestionConfidence, 
+/**
+ * What the code does that led to the suggestion.
+ */
+reasons: Array<string>, 
+/**
+ * Things that don't work the same in multiplayer.
+ */
+warnings: Array<string>, };

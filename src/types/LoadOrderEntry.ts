@@ -3,20 +3,12 @@ import type { PackageKind } from "./PackageKind";
 import type { PluginEntry } from "./PluginEntry";
 import type { ShaderPackageKind } from "./ShaderPackageKind";
 
-export type LoadOrderEntry = {
-  id: string;
-  name: string;
-  kind: PackageKind;
-  /**
-   * Path relative to instance data dir, e.g. `Better Bodies`.
-   */
-  relativeDir: string;
-  enabled: boolean;
-  priority: number;
-  plugins: Array<PluginEntry>;
-  treeChecksum: string | null;
-  /**
-   * Set for shader packages.
-   */
-  shaderKind?: ShaderPackageKind | null;
-};
+export type LoadOrderEntry = { id: string, name: string, kind: PackageKind, 
+/**
+ * Path relative to instance data dir, e.g. `Better Bodies`.
+ */
+relativeDir: string, enabled: boolean, priority: number, plugins: Array<PluginEntry>, treeChecksum: string | null, 
+/**
+ * Set for shader packages.
+ */
+shaderKind?: ShaderPackageKind | null, };

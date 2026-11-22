@@ -4,7 +4,4 @@ import type { ManifestPackage } from "./ManifestPackage";
 /**
  * The instance's shader packages, synced after the data packages.
  */
-export type ShaderManifest = {
-  packages: Array<ManifestPackage>;
-  totalDownloadBytes: number;
-};
+export type ShaderManifest = { packages: Array<ManifestPackage>, totalDownloadBytes: number, };

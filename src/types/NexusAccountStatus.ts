@@ -3,9 +3,4 @@
 /**
  * The account Nerevar is linked to.
  */
-export type NexusAccountStatus = {
-  linked: boolean;
-  name: string | null;
-  premium: boolean;
-  error: string | null;
-};
+export type NexusAccountStatus = { linked: boolean, name: string | null, premium: boolean, error: string | null, };

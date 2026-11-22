@@ -464,6 +464,8 @@ pub fn run() {
             momw::commands::momw_install_modlist,
             momw::commands::momw_cancel_install,
             momw::commands::momw_get_downloads_dir,
+            momw::commands::momw_last_report,
+            momw::commands::momw_add_manual_archive,
             momw::commands::momw_set_downloads_dir,
         ])
         .build(tauri::generate_context!())

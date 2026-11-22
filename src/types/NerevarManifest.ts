@@ -6,37 +6,24 @@ import type { RequiredDataFileEntry } from "./RequiredDataFileEntry";
 import type { ResolvedOpenMwConfig } from "./ResolvedOpenMwConfig";
 import type { ShaderManifest } from "./ShaderManifest";
 
-export type NerevarManifest = {
-  version: number;
-  instanceId: string;
-  instanceName: string;
-  instanceDescription: string;
-  /**
-   * The host's TES3MP-NG release tag (`v0.51.0`). Clients must run the same build to connect.
-   */
-  tes3mpReleaseTag?: string | null;
-  generatedAt: string;
-  baseGameData: string | null;
-  packages: Array<ManifestPackage>;
-  resolved: ResolvedOpenMwConfig;
-  totalDownloadBytes: number;
-  /**
-   * TES3MP game server port from the host's `tes3mp-server-default.cfg` [General] section.
-   */
-  tes3mpServerPort: number;
-  /**
-   * Address of the TES3MP game server when it isn't the sync host's own.
-   */
-  tes3mpServerAddress?: string | null;
-  tes3mpServerPassword?: string;
-  requiredDataFiles: Array<RequiredDataFileEntry>;
-  instanceSettings: InstanceSettings;
-  /**
-   * Seeded into clients' `config/` folder (see `SYNCED_CLIENT_FILES`).
-   */
-  clientFiles: Array<ClientConfigFile>;
-  /**
-   * Shader packages, listed and synced apart from `packages`.
-   */
-  shaders: ShaderManifest;
-};
+export type NerevarManifest = { version: number, instanceId: string, instanceName: string, instanceDescription: string, 
+/**
+ * The host's TES3MP-NG release tag (`v0.51.0`). Clients must run the same build to connect.
+ */
+tes3mpReleaseTag?: string | null, generatedAt: string, baseGameData: string | null, packages: Array<ManifestPackage>, resolved: ResolvedOpenMwConfig, totalDownloadBytes: number, 
+/**
+ * TES3MP game server port from the host's `tes3mp-server-default.cfg` [General] section.
+ */
+tes3mpServerPort: number, 
+/**
+ * Address of the TES3MP game server when it isn't the sync host's own.
+ */
+tes3mpServerAddress?: string | null, tes3mpServerPassword?: string, requiredDataFiles: Array<RequiredDataFileEntry>, instanceSettings: InstanceSettings, 
+/**
+ * Seeded into clients' `config/` folder (see `SYNCED_CLIENT_FILES`).
+ */
+clientFiles: Array<ClientConfigFile>, 
+/**
+ * Shader packages, listed and synced apart from `packages`.
+ */
+shaders: ShaderManifest, };

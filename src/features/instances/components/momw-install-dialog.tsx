@@ -19,12 +19,19 @@ import {
 } from "@/components/ui/select";
 import type {
   MomwInstallReport,
+  MomwManualMod,
   MomwModlistSummary,
   NexusAccountStatus,
 } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ExternalLink, Loader2 } from "lucide-react";
+import {
+  CheckCircle2,
+  ExternalLink,
+  FilePlus2,
+  Loader2,
+  TriangleAlert,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Link } from "wouter";
@@ -149,9 +156,34 @@ export function MomwInstallDialog({
 
         <DialogFooter>
           {report ? (
-            <Button type="button" onClick={() => onOpenChange(false)}>
-              Done
-            </Button>
+            reportNeedsAttention(report) ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => onOpenChange(false)}
+                >
+                  Close
+                </Button>
+                <Button
+                  type="button"
+                  disabled={installing}
+                  onClick={() => onInstall(report.modlist, report.beta)}
+                >
+                  {installing ? (
+                    <Loader2
+                      className="animate-spin"
+                      data-icon="inline-start"
+                    />
+                  ) : null}
+                  Install again
+                </Button>
+              </>
+            ) : (
+              <Button type="button" onClick={() => onOpenChange(false)}>
+                Done
+              </Button>
+            )
           ) : (
             <Button
               type="button"
@@ -170,9 +202,36 @@ export function MomwInstallDialog({
   );
 }
 
-function MomwReport({ report }: { report: MomwInstallReport }) {
+/** Whether the player has something to do after an install. */
+export function reportNeedsAttention(report: MomwInstallReport) {
   return (
-    <div className="max-h-[55vh] space-y-4 overflow-y-auto pr-1 font-serif text-sm">
+    report.manual.length > 0 ||
+    report.failed.length > 0 ||
+    report.leftOut.length > 0
+  );
+}
+
+function MomwReport({ report }: { report: MomwInstallReport }) {
+  const [added, setAdded] = useState<Set<string>>(new Set());
+  const [adding, setAdding] = useState<string | null>(null);
+
+  const addArchive = async (mod: MomwManualMod) => {
+    const [archive] = await invoke<string[]>("open_archive_file_picker");
+    if (!archive) return;
+    setAdding(mod.key);
+    try {
+      await invoke("momw_add_manual_archive", { key: mod.key, archive });
+      setAdded((current) => new Set(current).add(mod.key));
+      toast.success(`${mod.name} added; install the list again to finish`);
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setAdding(null);
+    }
+  };
+
+  return (
+    <div className="max-h-[60vh] space-y-5 overflow-y-auto pr-1 font-serif text-sm">
       <p className="text-foreground/80">
         {report.installed} mods installed, {report.upToDate} already up to date,{" "}
         {report.packages} packages in the load order.
@@ -180,43 +239,116 @@ function MomwReport({ report }: { report: MomwInstallReport }) {
           ? ` Repaired ${report.repaired.length} mods whose files had changed or gone missing.`
           : ""}
       </p>
+
+      {reportNeedsAttention(report) ? (
+        <p className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-200">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+          <span>
+            The list isn&apos;t complete yet. The game runs without the parts
+            below; follow the steps, then press &ldquo;Install again&rdquo; to
+            add them. Nothing already downloaded is downloaded again.
+          </span>
+        </p>
+      ) : (
+        <p className="flex items-center gap-2 text-emerald-300">
+          <CheckCircle2 className="size-4" />
+          Everything in the list is installed.
+        </p>
+      )}
+
       {report.manual.length > 0 ? (
         <section className="space-y-2">
           <h3 className="font-display text-sm tracking-[0.12em] text-accent uppercase">
             Download these yourself ({report.manual.length})
           </h3>
-          <p className="text-foreground/65">
-            Extract each into the folder shown (inside the instance&apos;s data
-            folder), or install its archive with &ldquo;Install archive&rdquo;
-            and rename the package, then install the list again to finish the
-            load order.
-          </p>
+          <ol className="list-decimal space-y-0.5 pl-5 text-foreground/65">
+            <li>Open the mod&apos;s page and download its file.</li>
+            <li>
+              Press &ldquo;Add downloaded file&rdquo; and choose the archive.
+              Nerevar keeps it in your downloads folder for every instance.
+            </li>
+            <li>Press &ldquo;Install again&rdquo; below.</li>
+          </ol>
           <ul className="space-y-1.5">
             {report.manual.map((mod) => (
               <li
-                key={mod.name}
-                className="rounded-md border border-border/40 bg-card/40 px-3 py-2"
+                key={mod.key}
+                className="space-y-1.5 rounded-md border border-border/40 bg-card/40 px-3 py-2"
               >
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1 font-display text-foreground underline-offset-2 hover:underline"
-                  onClick={() => void openUrl(mod.url)}
-                >
-                  {mod.name}
-                  <ExternalLink className="size-3.5" />
-                </button>
+                <p className="font-display text-foreground">{mod.name}</p>
                 <p className="text-foreground/60">{mod.reason}</p>
-                <code className="text-xs text-foreground/50">{mod.folder}</code>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void openUrl(mod.url)}
+                  >
+                    <ExternalLink data-icon="inline-start" />
+                    Open page
+                  </Button>
+                  {added.has(mod.key) ? (
+                    <span className="inline-flex items-center gap-1 text-emerald-300">
+                      <CheckCircle2 className="size-4" />
+                      Added
+                    </span>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={adding !== null}
+                      onClick={() => void addArchive(mod)}
+                    >
+                      {adding === mod.key ? (
+                        <Loader2
+                          className="animate-spin"
+                          data-icon="inline-start"
+                        />
+                      ) : (
+                        <FilePlus2 data-icon="inline-start" />
+                      )}
+                      Add downloaded file
+                    </Button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
         </section>
       ) : null}
+
+      {report.leftOut.length > 0 ? (
+        <section className="space-y-2">
+          <h3 className="font-display text-sm tracking-[0.12em] text-accent uppercase">
+            Plugins turned off ({report.leftOut.length})
+          </h3>
+          <p className="text-foreground/65">
+            These need a plugin that isn&apos;t installed, so they&apos;re off
+            to keep the game from stopping with &ldquo;asks for parent
+            file&rdquo;. They turn back on when you install the list again after
+            adding the mod with that plugin.
+          </p>
+          <ul className="space-y-1">
+            {report.leftOut.map((item) => (
+              <li key={item.plugin}>
+                <code className="text-foreground">{item.plugin}</code>{" "}
+                <span className="text-foreground/60">needs</span>{" "}
+                <code className="text-foreground">{item.master}</code>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {report.failed.length > 0 ? (
         <section className="space-y-2">
           <h3 className="font-display text-sm tracking-[0.12em] text-destructive uppercase">
             Failed ({report.failed.length})
           </h3>
+          <p className="text-foreground/65">
+            Usually a download that broke off or a site that was down: install
+            the list again to retry them.
+          </p>
           <ul className="space-y-1">
             {report.failed.map((mod) => (
               <li key={mod.name}>
@@ -227,6 +359,7 @@ function MomwReport({ report }: { report: MomwInstallReport }) {
           </ul>
         </section>
       ) : null}
+
       {report.notes.length > 0 ? (
         <section className="space-y-1">
           <h3 className="font-display text-sm tracking-[0.12em] text-foreground/70 uppercase">

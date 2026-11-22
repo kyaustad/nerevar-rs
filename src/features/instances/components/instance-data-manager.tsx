@@ -55,7 +55,10 @@ import {
 import { formatByteSize } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { MomwInstallDialog } from "@/features/instances/components/momw-install-dialog";
+import {
+  MomwInstallDialog,
+  reportNeedsAttention,
+} from "@/features/instances/components/momw-install-dialog";
 import {
   ConflictIndicator,
   ConflictsContext,
@@ -97,7 +100,7 @@ import {
   useState,
   type HTMLAttributes,
 } from "react";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { toast } from "sonner";
 
 export const INSTANCE_DATA_CARD_CLASS =
@@ -192,6 +195,28 @@ export function InstanceDataManager({
     installingModlist;
   const [momwOpen, setMomwOpen] = useState(false);
   const [momwReport, setMomwReport] = useState<MomwInstallReport | null>(null);
+  const search = useSearch();
+  // The last install's report while it has something for the player to do
+  const [momwAttention, setMomwAttention] = useState<MomwInstallReport | null>(
+    null,
+  );
+  useEffect(() => {
+    invoke<MomwInstallReport | null>("momw_last_report", { instanceId })
+      .then((report) => {
+        const attention =
+          report && reportNeedsAttention(report) ? report : null;
+        setMomwAttention(attention);
+        // From the banner's "Review" button
+        if (
+          attention &&
+          new URLSearchParams(search).get("review") === "modlist"
+        ) {
+          setMomwReport(attention);
+          setMomwOpen(true);
+        }
+      })
+      .catch(() => setMomwAttention(null));
+  }, [instanceId, search]);
   const [conflicts, setConflicts] = useState<Map<string, PackageConflicts>>(
     new Map(),
   );
@@ -331,8 +356,26 @@ export function InstanceDataManager({
             beta,
             operationId,
           }),
+        // Stays on screen on every page, for players who closed the dialog
+        attention: (result) =>
+          reportNeedsAttention(result)
+            ? {
+                detail: `Installed, but needs you: ${attentionSummary(result)}`,
+                action: {
+                  label: "Review",
+                  href: `/instances/${instanceId}/data?review=modlist`,
+                },
+              }
+            : null,
       });
       setMomwReport(report);
+      setMomwOpen(true);
+      if (reportNeedsAttention(report)) {
+        setMomwAttention(report);
+      } else {
+        setMomwAttention(null);
+        toast.success(`${slug} is installed`);
+      }
       await refresh();
     } catch (error) {
       toast.error(`Failed to install ${slug}: ${error}`);
@@ -620,6 +663,26 @@ export function InstanceDataManager({
                 onWriteLaunchCfg={() => void writeLaunchCfg()}
                 onStartHosting={() => void startHosting()}
               />
+
+              {momwAttention ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 font-serif text-sm text-amber-200">
+                  <span>
+                    The {momwAttention.modlist} list isn&apos;t complete:{" "}
+                    {attentionSummary(momwAttention)}.
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setMomwReport(momwAttention);
+                      setMomwOpen(true);
+                    }}
+                  >
+                    Review and fix
+                  </Button>
+                </div>
+              ) : null}
 
               {loadOrder?.baseGameData ? (
                 <p className="font-mono text-sm text-foreground/60 truncate">
@@ -1711,4 +1774,22 @@ function PackageTypeSelect({
       </SelectContent>
     </Select>
   );
+}
+
+/** "2 mods to download by hand, 1 plugin turned off" */
+function attentionSummary(report: MomwInstallReport) {
+  const parts: string[] = [];
+  const count = (n: number, one: string, many: string) =>
+    `${n} ${n === 1 ? one : many}`;
+  if (report.manual.length > 0)
+    parts.push(
+      count(report.manual.length, "mod", "mods") + " to download by hand",
+    );
+  if (report.failed.length > 0)
+    parts.push(count(report.failed.length, "mod", "mods") + " failed");
+  if (report.leftOut.length > 0)
+    parts.push(
+      count(report.leftOut.length, "plugin", "plugins") + " turned off",
+    );
+  return parts.join(", ");
 }

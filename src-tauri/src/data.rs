@@ -89,6 +89,10 @@ pub struct NerevarConfig {
     pub synced_instances: Option<Vec<InstanceConfig>>,
     pub root_path: Option<String>,
     pub sync_port: i32,
+    /// Folder of the archives modlist installs download, shared by every instance (Nerevar's own when unset)
+    #[serde(default)]
+    #[ts(optional)]
+    pub downloads_dir: Option<String>,
 }
 
 // impl Default for NerevarConfig {

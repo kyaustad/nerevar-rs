@@ -58,6 +58,8 @@ pub struct MomwInstallReport {
     pub packages: u32,
     pub manual: Vec<MomwManualMod>,
     pub failed: Vec<MomwFailedMod>,
+    /// Mods installed again because their files were changed or missing
+    pub repaired: Vec<String>,
     pub notes: Vec<String>,
 }
 
@@ -72,6 +74,59 @@ struct InstallState {
     /// Lines this install added to the instance's openmw.cfg overrides, and its settings.cfg text
     cfg_lines: Vec<String>,
     settings_cfg: String,
+    /// mod slug -> (folder, files, bytes) of its folders after the install, to find mods to repair
+    #[serde(default)]
+    fingerprints: BTreeMap<String, Vec<(String, u64, u64)>>,
+    /// tes3cmd commands that ran (see `tools::Clean::key`), so commands that change plugins in place run once
+    #[serde(default)]
+    cleaned: std::collections::BTreeSet<String>,
+}
+
+/// File count and size of a mod's folders: changes when files go missing or change size.
+fn fingerprint(data_dir: &Path, item: &MomwMod) -> Vec<(String, u64, u64)> {
+    let mut folders: Vec<String> = item
+        .download_info
+        .iter()
+        .map(|info| format!("{}/{}", item.category, info.extract_to.clone().unwrap_or_else(|| item.dir.clone())))
+        .collect();
+    folders.sort();
+    folders.dedup();
+    folders
+        .into_iter()
+        .map(|folder| {
+            let (mut files, mut bytes) = (0u64, 0u64);
+            let mut pending = vec![data_dir.join(&folder)];
+            while let Some(dir) = pending.pop() {
+                for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                    match entry.metadata() {
+                        Ok(meta) if meta.is_dir() => pending.push(entry.path()),
+                        Ok(meta) => {
+                            files += 1;
+                            bytes += meta.len();
+                        }
+                        Err(_) => {}
+                    }
+                }
+            }
+            (folder, files, bytes)
+        })
+        .collect()
+}
+
+/// The clean actions of a mod.
+fn cleans(data_dir: &Path, item: &MomwMod) -> Vec<super::tools::Clean> {
+    item.download_info
+        .iter()
+        .flat_map(|info| info.actions.iter())
+        .filter_map(|action| match action {
+            super::ModAction::Clean { path, arguments } => Some(super::tools::Clean {
+                category_dir: data_dir.join(&item.category),
+                path: path.clone(),
+                arguments: arguments.clone(),
+            }),
+            _ => None,
+        })
+        .collect()
 }
 
 fn state_path(data_dir: &Path) -> PathBuf {
@@ -98,15 +153,16 @@ pub struct Download {
     /// Changes when the mod's file changes
     pub version: String,
     pub size: Option<u64>,
-    /// Free Nexus accounts: the file's link comes from the player's click on its download button
-    pub click: Option<NexusClick>,
+    /// Nexus files: the link is asked for only when the file isn't in the downloads folder
+    pub nexus: Option<NexusFileRef>,
 }
 
 #[derive(Debug, Clone)]
-pub struct NexusClick {
+pub struct NexusFileRef {
     game: String,
     mod_id: u64,
     file_id: u64,
+    /// The file's page, which free accounts download from with the "Mod Manager Download" button
     page: String,
 }
 
@@ -116,6 +172,18 @@ const CLICK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15 * 6
 enum Source {
     Download(Download),
     Manual(String),
+}
+
+fn direct_download(item: &MomwMod, info: &DownloadInfo, url: String) -> Download {
+    let file_name = url
+        .split(['?', '#'])
+        .next()
+        .and_then(|path| path.rsplit('/').next())
+        .filter(|name| name.contains('.'))
+        .map(|name| urlencoding::decode(name).map(|n| n.into_owned()).unwrap_or_else(|_| name.to_string()))
+        .or_else(|| info.file_name.clone().filter(|name| !name.is_empty()))
+        .unwrap_or_else(|| format!("{}.download", item.dir));
+    Download { version: url.clone(), url, file_name, size: None, nexus: None }
 }
 
 fn is_guide(item: &MomwMod) -> bool {
@@ -161,13 +229,23 @@ impl Resolver {
                 return Ok(Source::Manual(format!("Download it from {direct} (Mega links can't be downloaded automatically)")));
             }
             let url = if direct.contains("dropbox.com") { direct.replace("dl=0", "dl=1") } else { direct.to_string() };
-            let file_name = info
-                .file_name
-                .clone()
-                .filter(|name| !name.is_empty())
-                .or_else(|| url.split(['?', '#']).next()?.rsplit('/').next().map(str::to_string))
-                .unwrap_or_else(|| format!("{}.download", item.dir));
-            return Ok(Source::Download(Download { version: url.clone(), url, file_name, size: None, click: None }));
+            return Ok(Source::Download(direct_download(item, info, url)));
+        }
+
+        // Files that Modding-OpenMW.com hosts itself
+        for link in [item.dl_url.as_str(), item.url.as_str()] {
+            if link.starts_with('/') && link.len() > 1 {
+                let url = format!("{}{link}", super::MOMW_HOST);
+                return Ok(Source::Download(direct_download(item, info, url)));
+            }
+        }
+
+        // https://baturin.org/misc/morrowind-mods/#gondoliers-license -> .../gondoliers_license.zip, like umo
+        if item.url.starts_with("https://baturin.org") {
+            if let Some((page, anchor)) = item.url.split_once('#') {
+                let url = format!("{page}{}.zip", anchor.replace('-', "_"));
+                return Ok(Source::Download(direct_download(item, info, url)));
+            }
         }
 
         if let Some((game, mod_id)) = nexus_ids(&item.url) {
@@ -233,18 +311,13 @@ impl Resolver {
         };
         let file_name =
             if file.file_name.is_empty() { format!("{}.archive", file.file_id) } else { file.file_name.clone() };
-        let (url, click) = if self.premium {
-            (nexus.download_link(game, mod_id, file.file_id).await?, None)
-        } else {
-            let page = format!("https://www.nexusmods.com/{game}/mods/{mod_id}?tab=files&file_id={}&nmm=1", file.file_id);
-            (String::new(), Some(NexusClick { game: game.to_string(), mod_id, file_id: file.file_id, page }))
-        };
+        let page = format!("https://www.nexusmods.com/{game}/mods/{mod_id}?tab=files&file_id={}&nmm=1", file.file_id);
         Ok(Source::Download(Download {
-            url,
+            url: String::new(),
             file_name,
             version: format!("nexus:{}", file.file_id),
             size: file.size_in_bytes,
-            click,
+            nexus: Some(NexusFileRef { game: game.to_string(), mod_id, file_id: file.file_id, page }),
         }))
     }
 
@@ -274,7 +347,7 @@ impl Resolver {
                     file_name: file.file_name.clone(),
                     version: format!("gitlab:{}", file.id),
                     size: file.size,
-                    click: None,
+                    nexus: None,
                 }));
             }
         }
@@ -286,7 +359,7 @@ impl Resolver {
             file_name: format!("{}-{}.zip", project.replace('/', "-"), &commit.id[..commit.id.len().min(12)]),
             version: format!("gitlab-commit:{}", commit.id),
             size: None,
-            click: None,
+            nexus: None,
         }))
     }
 
@@ -312,18 +385,25 @@ fn pick_platform_file<T>(files: &[T], name: impl Fn(&T) -> &String) -> Option<&T
         .or_else(|| files.first())
 }
 
-pub fn archive_cache_dir() -> PathBuf {
-    dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("Nerevar").join("archives")
-}
 
-fn safe_file_name(name: &str) -> String {
-    name.chars().map(|c| if r#"<>:"/\|?*"#.contains(c) || c.is_control() { '_' } else { c }).collect()
+/// The download link of a Nexus file: asked for directly with Premium, else from the player's click on its
+/// "Mod Manager Download" button.
+async fn nexus_link(
+    nexus: &NexusClient,
+    premium: bool,
+    file: &NexusFileRef,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<String, String> {
+    if premium {
+        return nexus.download_link(&file.game, file.mod_id, file.file_id).await;
+    }
+    link_from_click(nexus, file, cancel).await
 }
 
 /// For free accounts: opens the file's page and waits for the player's click on its download button.
 async fn link_from_click(
     nexus: &NexusClient,
-    click: &NexusClick,
+    click: &NexusFileRef,
     cancel: &std::sync::atomic::AtomicBool,
 ) -> Result<String, String> {
     let waiting = crate::nexus::nxm::wait_for(click.mod_id, click.file_id);
@@ -352,13 +432,6 @@ async fn link_from_click(
 }
 
 pub async fn download_file(http: &reqwest::Client, download: &Download, dest: &Path) -> Result<(), String> {
-    if let (Ok(metadata), Some(size)) = (std::fs::metadata(dest), download.size) {
-        if metadata.len() == size {
-            return Ok(()); // downloaded before
-        }
-    } else if download.size.is_none() && dest.is_file() {
-        return Ok(());
-    }
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
@@ -446,7 +519,32 @@ fn apply_config(
 ) -> Result<(), String> {
     let mut load_order = load_load_order(data_dir).unwrap_or_else(|_| LoadOrder::default());
     let content: Vec<String> = cfg_values(&config.openmw_cfg.content_files, "content").into_iter().map(str::to_string).collect();
-    let wanted: HashSet<String> = content.iter().map(|c| c.to_ascii_lowercase()).collect();
+
+    // Content that can load: installed, with its masters (a mod to download by hand leaves its patches out)
+    let mut files = HashMap::new();
+    let base_data = load_order.base_game_data.clone().or_else(crate::openmw_ini_importer::read_base_data_path);
+    match base_data.as_deref().map(|path| PathBuf::from(path.trim_matches('"'))).filter(|path| path.is_dir()) {
+        Some(base) => super::tools::content_files_in(&base, &mut files),
+        None => {
+            for master in ["morrowind.esm", "tribunal.esm", "bloodmoon.esm"] {
+                files.insert(master.to_string(), PathBuf::new());
+            }
+        }
+    }
+    let mut seen_dirs = HashSet::new();
+    for path in cfg_values(&config.openmw_cfg.data_paths, "data") {
+        if let Some(relative) = relative_data_path(path).filter(|_| !is_base_game_data_path(path)) {
+            if seen_dirs.insert(relative.to_ascii_lowercase()) {
+                super::tools::content_files_in(&package_abs_path(data_dir, &relative), &mut files);
+            }
+        }
+    }
+    let names: Vec<&str> = content.iter().map(String::as_str).collect();
+    let (wanted, dropped) = super::tools::loadable_content(&names, &files);
+    if !dropped.is_empty() {
+        let list: Vec<String> = dropped.iter().map(|(plugin, master)| format!("{plugin} (needs {master})")).collect();
+        report.notes.push(format!("Left out plugins whose masters aren't installed: {}", list.join(", ")));
+    }
 
     let mut list_entries = Vec::new();
     let mut seen = HashSet::new();
@@ -547,6 +645,7 @@ fn apply_config(
 /// Downloads and installs the list's mods into the instance's data folder, then sets the instance's load order.
 pub async fn install_modlist(
     data_dir: PathBuf,
+    downloads_dir: PathBuf,
     slug: String,
     beta: bool,
     link_handler: bool,
@@ -583,6 +682,8 @@ pub async fn install_modlist(
     let http = reqwest::Client::builder().user_agent(crate::nexus::user_agent()).build().map_err(|e| e.to_string())?;
     let mut resolver =
         Resolver { nexus: nexus.clone(), premium, link_handler, file_lists: HashMap::new(), http: http.clone() };
+
+    let store = Arc::new(super::downloads::Downloads::open(downloads_dir)?);
 
     // Find what each mod needs
     struct Pending {
@@ -628,26 +729,39 @@ pub async fn install_modlist(
             report.manual.push(MomwManualMod { name: item.name.clone(), url: item.url.clone(), reason, folder });
             continue;
         }
+        // Up to date: the same files, and its folders as the install left them (else it's repaired)
         let versions: Vec<String> = downloads.iter().map(|(_, d)| d.version.clone()).collect();
-        let installed = state.mods.get(&item.slug) == Some(&versions)
-            && downloads.iter().all(|(info, _)| {
+        let same_files = state.mods.get(&item.slug) == Some(&versions);
+        let intact = match state.fingerprints.get(&item.slug) {
+            Some(expected) => *expected == fingerprint(&data_dir, item),
+            None => downloads.iter().all(|(info, _)| {
                 data_dir.join(&item.category).join(info.extract_to.clone().unwrap_or_else(|| item.dir.clone())).exists()
-            });
-        if installed {
+            }),
+        };
+        if same_files && intact {
             report.up_to_date += 1;
+            // Archives an earlier Nerevar kept elsewhere join the downloads folder, for other instances and repairs
+            for (_, download) in &downloads {
+                if store.cached(&download.version, download.size).is_none() {
+                    store.adopt_legacy(&download.version, &item.dir, &download.file_name, download.size);
+                }
+            }
         } else {
+            if same_files {
+                report.repaired.push(item.name.clone());
+            }
             pending.push(Pending { item: (*item).clone(), downloads });
         }
     }
 
-    // Download, then extract each mod as soon as its files are there
-    let cache_dir = archive_cache_dir();
+    // Download what isn't in the downloads folder, then extract each mod as soon as its files are there
+    let downloads = store;
     let total = pending.len() as u64;
     let done = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let state = Arc::new(Mutex::new(state));
     let results: Vec<Result<(String, Vec<String>), MomwFailedMod>> = futures_util::stream::iter(pending.into_iter().map(|job| {
         let http = http.clone();
-        let cache_dir = cache_dir.clone();
+        let downloads = downloads.clone();
         let data_dir = data_dir.clone();
         let done = done.clone();
         let state = state.clone();
@@ -661,22 +775,33 @@ pub async fn install_modlist(
             }
             let mut archives = Vec::new();
             for (info, download) in &job.downloads {
-                let path = cache_dir.join(safe_file_name(&job.item.dir)).join(safe_file_name(&download.file_name));
-                let mut download = download.clone();
-                let cached = download.size.is_some_and(|size| std::fs::metadata(&path).is_ok_and(|m| m.len() == size));
-                if let (Some(click), false) = (download.click.clone(), cached) {
-                    let nexus = nexus.as_ref().ok_or_else(|| fail("Link your Nexus Mods account".into()))?;
-                    emit(
-                        BackgroundOperationPhase::InstallingMods,
-                        format!("Click \"Mod Manager Download\" for {} on Nexus Mods", job.item.name),
-                        done.load(std::sync::atomic::Ordering::Relaxed),
-                        total,
-                        Some(job.item.name.clone()),
-                    );
-                    download.url = link_from_click(nexus, &click, &cancel).await.map_err(fail)?;
-                }
-                let download = &download;
-                download_file(&http, download, &path).await.map_err(fail)?;
+                let key = download.version.as_str();
+                let cached = downloads
+                    .cached(key, download.size)
+                    .or_else(|| downloads.adopt_legacy(key, &job.item.dir, &download.file_name, download.size));
+                let path = match cached {
+                    Some(path) => path,
+                    None => {
+                        let mut download = download.clone();
+                        if let Some(file) = download.nexus.clone() {
+                            let nexus = nexus.as_ref().ok_or_else(|| fail("Link your Nexus Mods account".into()))?;
+                            if !premium {
+                                emit(
+                                    BackgroundOperationPhase::InstallingMods,
+                                    format!("Click \"Mod Manager Download\" for {} on Nexus Mods", job.item.name),
+                                    done.load(std::sync::atomic::Ordering::Relaxed),
+                                    total,
+                                    Some(job.item.name.clone()),
+                                );
+                            }
+                            download.url = nexus_link(nexus, premium, &file, &cancel).await.map_err(fail)?;
+                        }
+                        let path = downloads.path_for(key, &download.file_name);
+                        download_file(&http, &download, &path).await.map_err(fail)?;
+                        downloads.record(key, &path).map_err(fail)?;
+                        path
+                    }
+                };
                 archives.push((info.clone(), download.clone(), path));
             }
             let item = job.item.clone();
@@ -691,6 +816,11 @@ pub async fn install_modlist(
             let versions = job.downloads.iter().map(|(_, d)| d.version.clone()).collect();
             if let Ok(mut state) = state.lock() {
                 state.mods.insert(job.item.slug.clone(), versions);
+                // A fresh copy: its tes3cmd commands run again, and its fingerprint is taken after them
+                for clean in cleans(&data_dir, &job.item) {
+                    state.cleaned.remove(&clean.key());
+                }
+                state.fingerprints.remove(&job.item.slug);
                 let _ = save_state(&data_dir, &state);
             }
             let finished = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
@@ -728,6 +858,11 @@ pub async fn install_modlist(
     );
     let mut state = Arc::try_unwrap(state).ok().and_then(|m| m.into_inner().ok()).unwrap_or_default();
     let data_dir_for_config = data_dir.clone();
+    let installed_mods: Vec<MomwMod> = installable
+        .iter()
+        .filter(|item| state.mods.contains_key(&item.slug))
+        .map(|item| (*item).clone())
+        .collect();
     let (state, report) = tauri::async_runtime::spawn_blocking(move || {
         let mut report = report;
         let base_data = load_load_order(&data_dir_for_config)
@@ -735,7 +870,31 @@ pub async fn install_modlist(
             .and_then(|order| order.base_game_data)
             .or_else(crate::openmw_ini_importer::read_base_data_path);
         let base_data = base_data.map(|path| path.trim_matches('"').to_string());
+
+        // tes3cmd: lists' cleaned plugins (Clean_<plugin>) and their other plugin fixes
+        for item in &installed_mods {
+            for clean in cleans(&data_dir_for_config, item) {
+                let done = state.cleaned.contains(&clean.key()) && clean.output().is_none_or(|out| out.is_file());
+                if done {
+                    continue;
+                }
+                match super::tools::clean(&data_dir_for_config, base_data.as_deref(), &clean) {
+                    Ok(()) => {
+                        state.cleaned.insert(clean.key());
+                    }
+                    Err(error) => report.notes.push(format!("{}: {error}", item.name)),
+                }
+            }
+        }
+
         report.notes.extend(super::tools::generate_plugins(&data_dir_for_config, base_data.as_deref(), &config));
+
+        // Fingerprints of the installed mods, after cleaning and the generated plugins
+        for item in &installed_mods {
+            if !state.fingerprints.contains_key(&item.slug) || item.dir == "MOMWToolsPack" {
+                state.fingerprints.insert(item.slug.clone(), fingerprint(&data_dir_for_config, item));
+            }
+        }
         apply_config(&data_dir_for_config, &slug, &config, &mut state, &mut report).map(|_| (state, report))
     })
     .await
@@ -768,6 +927,27 @@ mod tests {
         assert_eq!(nexus_ids("https://www.nexusmods.com/morrowind/mods/54708?tab=files"), Some(("morrowind".into(), 54708)));
         assert_eq!(gitlab_project("https://modding-openmw.gitlab.io/delta-plugin/"), Some("modding-openmw/delta-plugin".into()));
         assert_eq!(gitlab_project("https://gitlab.com/someone/some-mod/-/releases"), Some("someone/some-mod".into()));
+    }
+
+    #[tokio::test]
+    async fn resolves_momw_hosted_and_baturin_files() {
+        let mut item: MomwMod = serde_json::from_str(
+            r#"{"name":"M","url":"https://baturin.org/misc/morrowind-mods/#gondoliers-license","category":"Cat",
+            "dl_url":"","dir":"MDir","slug":"m","download_info":[{"extract_to":"MDir"}]}"#,
+        )
+        .unwrap();
+        let mut resolver =
+            Resolver { nexus: None, premium: false, link_handler: false, file_lists: HashMap::new(), http: reqwest::Client::new() };
+        let info = item.download_info[0].clone();
+        let Ok(Source::Download(download)) = resolver.resolve(&item, &info).await else { panic!("not a download") };
+        assert_eq!(download.url, "https://baturin.org/misc/morrowind-mods/gondoliers_license.zip");
+        assert_eq!(download.file_name, "gondoliers_license.zip");
+
+        item.url = "https://modding-openmw.com/mods/building-up-uviriths-legacy/".into();
+        item.dl_url = "/files/Building_Up_Uviriths_Legacy.7z".into();
+        let Ok(Source::Download(download)) = resolver.resolve(&item, &info).await else { panic!("not a download") };
+        assert_eq!(download.url, "https://modding-openmw.com/files/Building_Up_Uviriths_Legacy.7z");
+        assert_eq!(download.file_name, "Building_Up_Uviriths_Legacy.7z");
     }
 
     #[test]
@@ -841,7 +1021,10 @@ mod live {
         let slug = std::env::var("NEREVAR_LIVE_LIST").expect("set NEREVAR_LIVE_LIST");
         let dir = PathBuf::from(std::env::var("NEREVAR_LIVE_DIR").expect("set NEREVAR_LIVE_DIR"));
         let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let report = install_modlist(dir, slug, false, false, None, cancel).await.expect("install failed");
+        let downloads = std::env::var("NEREVAR_LIVE_DOWNLOADS")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| super::super::downloads::default_dir());
+        let report = install_modlist(dir, downloads, slug, false, false, None, cancel).await.expect("install failed");
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
     }
 }

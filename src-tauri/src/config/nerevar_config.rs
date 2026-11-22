@@ -38,6 +38,7 @@ pub fn load_or_create_nerevar_config_at(config_path: &Path) -> Result<NerevarCon
             synced_instances: None,
             root_path: None,
             sync_port: 25567,
+            downloads_dir: None,
         };
         std::fs::write(
             config_path,
@@ -178,6 +179,35 @@ pub async fn set_root_path(state: State<'_, Mutex<AppState>>, path: String) -> R
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// The downloads folder of modlist installs: the player's choice, else Nerevar's own.
+pub fn downloads_dir(config: &NerevarConfig) -> PathBuf {
+    config
+        .downloads_dir
+        .as_deref()
+        .filter(|dir| !dir.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(crate::momw::downloads::default_dir)
+}
+
+/// Sets the downloads folder of modlist installs (None: Nerevar's own). Archives in the old folder stay there.
+pub fn set_downloads_dir(state: State<'_, Mutex<AppState>>, path: Option<String>) -> Result<String, String> {
+    let path = path.filter(|p| !p.trim().is_empty());
+    if let Some(dir) = &path {
+        std::fs::create_dir_all(dir).map_err(|e| format!("Failed to create {dir}: {e}"))?;
+    }
+    let (config_path, config, app) = {
+        let mut guard = state.lock().map_err(|_| "App state lock poisoned".to_string())?;
+        guard.nerevar_config.downloads_dir = path;
+        (guard.nerevar_config_path.clone(), guard.nerevar_config.clone(), guard.app_handle.clone())
+    };
+    std::fs::write(Path::new(&config_path), serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    if let Some(app) = app {
+        let _ = app.emit("on_config_change", config.clone());
+    }
+    Ok(downloads_dir(&config).to_string_lossy().into_owned())
 }
 
 pub async fn set_sync_port(state: State<'_, Mutex<AppState>>, port: i32) -> Result<(), String> {

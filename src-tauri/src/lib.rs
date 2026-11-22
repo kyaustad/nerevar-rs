@@ -463,6 +463,8 @@ pub fn run() {
             momw::commands::momw_list_modlists,
             momw::commands::momw_install_modlist,
             momw::commands::momw_cancel_install,
+            momw::commands::momw_get_downloads_dir,
+            momw::commands::momw_set_downloads_dir,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

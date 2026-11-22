@@ -7,6 +7,7 @@
 pub mod actions;
 pub mod archive;
 pub mod commands;
+pub mod downloads;
 pub mod install;
 pub mod tools;
 
@@ -54,9 +55,12 @@ pub enum ModAction {
         #[serde(default)]
         force: Option<bool>,
     },
-    /// tes3cmd cleaning of a plugin; Nerevar doesn't run tes3cmd
+    /// tes3cmd cleaning of a plugin (`Clean_<plugin>` next to it), or another tes3cmd command in `arguments`
     Clean {
         path: String,
+        /// tes3cmd's command and options, as a list or as a string of a JSON list
+        #[serde(default)]
+        arguments: Option<serde_json::Value>,
     },
     #[serde(other)]
     Unknown,

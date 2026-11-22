@@ -176,6 +176,9 @@ function MomwReport({ report }: { report: MomwInstallReport }) {
       <p className="text-foreground/80">
         {report.installed} mods installed, {report.upToDate} already up to date,{" "}
         {report.packages} packages in the load order.
+        {report.repaired.length > 0
+          ? ` Repaired ${report.repaired.length} mods whose files had changed or gone missing.`
+          : ""}
       </p>
       {report.manual.length > 0 ? (
         <section className="space-y-2">

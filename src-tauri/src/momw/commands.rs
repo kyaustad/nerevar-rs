@@ -48,11 +48,16 @@ pub async fn momw_install_modlist(
         }
         *current = Some(cancel.clone());
     }
+    let downloads_dir = {
+        let guard = state.lock().map_err(|_| "App state lock poisoned".to_string())?;
+        crate::config::nerevar_config::downloads_dir(&guard.nerevar_config)
+    };
     let link_handler = crate::nexus::nxm::nexus_link_handler_status(app.clone()).registered;
     let progress = operation_id.map(|id| ProgressEmitter::new(app, instance_id.clone(), id));
     let result = install_modlist(
         resolve_package_data_dir(&instance),
-        slug,
+        downloads_dir.clone(),
+        slug.clone(),
         beta.unwrap_or(false),
         link_handler,
         progress,
@@ -62,7 +67,54 @@ pub async fn momw_install_modlist(
     if let Ok(mut current) = cancel_flag().lock() {
         *current = None;
     }
+    log_report(&instance.name, &slug, &downloads_dir, &result);
     result
+}
+
+/// Writes what an install did to Nerevar's log, for players reporting a broken list.
+fn log_report(instance: &str, slug: &str, downloads: &std::path::Path, result: &Result<MomwInstallReport, String>) {
+    use tauri_plugin_log::log::{info, warn};
+    let report = match result {
+        Ok(report) => report,
+        Err(error) => {
+            warn!("Modlist {slug} into {instance} failed: {error}");
+            return;
+        }
+    };
+    info!(
+        "Modlist {slug} into {instance} (downloads in {}): {} installed, {} up to date, {} repaired, {} manual, {} failed",
+        downloads.display(),
+        report.installed,
+        report.up_to_date,
+        report.repaired.len(),
+        report.manual.len(),
+        report.failed.len()
+    );
+    for name in &report.repaired {
+        info!("  repaired: {name}");
+    }
+    for item in &report.manual {
+        warn!("  manual: {item:?}");
+    }
+    for item in &report.failed {
+        warn!("  failed: {item:?}");
+    }
+    for note in &report.notes {
+        warn!("  note: {note}");
+    }
+}
+
+/// The downloads folder of modlist installs.
+#[tauri::command]
+pub fn momw_get_downloads_dir(state: State<'_, Mutex<AppState>>) -> Result<String, String> {
+    let guard = state.lock().map_err(|_| "App state lock poisoned".to_string())?;
+    Ok(crate::config::nerevar_config::downloads_dir(&guard.nerevar_config).to_string_lossy().into_owned())
+}
+
+/// Chooses the downloads folder of modlist installs (none: Nerevar's own). Returns the folder now used.
+#[tauri::command]
+pub fn momw_set_downloads_dir(state: State<'_, Mutex<AppState>>, path: Option<String>) -> Result<String, String> {
+    crate::config::nerevar_config::set_downloads_dir(state, path)
 }
 
 #[tauri::command]

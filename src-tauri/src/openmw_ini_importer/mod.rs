@@ -1,5 +1,5 @@
 mod content_files;
-mod esm_header;
+pub mod esm_header;
 mod fallback_keys;
 mod base_cfg;
 mod importer;

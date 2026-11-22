@@ -210,16 +210,28 @@ pub async fn install_nexus_link(app: &AppHandle, instance_id: &str, link: &NxmLi
             .unwrap_or_else(|| file.map(|f| f.name.clone()).unwrap_or_else(|| format!("Nexus mod {}", link.mod_id))),
     };
 
-    let archive_path = crate::momw::install::archive_cache_dir().join("nexus").join(package_folder_name(&file_name));
-    let download = crate::momw::install::Download {
-        url,
-        file_name: file_name.clone(),
-        version: format!("nexus:{}", link.file_id),
-        size: file.and_then(|f| f.size_in_bytes),
-        click: None,
+    // Into the downloads folder that modlist installs use, unless it's there already
+    let downloads_dir = {
+        let state = app.state::<Mutex<AppState>>();
+        let guard = state.lock().map_err(|_| "App state lock poisoned".to_string())?;
+        crate::config::nerevar_config::downloads_dir(&guard.nerevar_config)
     };
-    let http = reqwest::Client::builder().user_agent(crate::nexus::user_agent()).build().map_err(|e| e.to_string())?;
-    crate::momw::install::download_file(&http, &download, &archive_path).await?;
+    let downloads = crate::momw::downloads::Downloads::open(downloads_dir)?;
+    let key = format!("nexus:{}", link.file_id);
+    let size = file.and_then(|f| f.size_in_bytes);
+    let archive_path = match downloads.cached(&key, size) {
+        Some(path) => path,
+        None => {
+            let download =
+                crate::momw::install::Download { url, file_name: file_name.clone(), version: key.clone(), size, nexus: None };
+            let path = downloads.path_for(&key, &file_name);
+            let http =
+                reqwest::Client::builder().user_agent(crate::nexus::user_agent()).build().map_err(|e| e.to_string())?;
+            crate::momw::install::download_file(&http, &download, &path).await?;
+            downloads.record(&key, &path)?;
+            path
+        }
+    };
 
     let link = link.clone();
     tauri::async_runtime::spawn_blocking(move || {

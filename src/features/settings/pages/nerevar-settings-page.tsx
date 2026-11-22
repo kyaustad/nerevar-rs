@@ -10,6 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useConfig } from "@/features/config/context/config-context-provider";
+import { DownloadsFolderSection } from "@/features/settings/components/downloads-folder-section";
 import { NexusAccountSection } from "@/features/settings/components/nexus-account-section";
 import { useSyncHostStatus } from "@/features/instances/hooks/use-sync-host-status";
 import { cn } from "@/lib/utils";
@@ -177,6 +178,12 @@ export function NerevarSettingsPage() {
       <Card className={cardClass}>
         <CardContent className="py-5">
           <NexusAccountSection />
+        </CardContent>
+      </Card>
+
+      <Card className={cardClass}>
+        <CardContent className="py-5">
+          <DownloadsFolderSection />
         </CardContent>
       </Card>
     </div>

@@ -2,16 +2,12 @@
 import type { MomwFailedMod } from "./MomwFailedMod";
 import type { MomwManualMod } from "./MomwManualMod";
 
-export type MomwInstallReport = {
-  modlist: string;
-  installed: number;
-  upToDate: number;
-  /**
-   * Guide entries of the list that have nothing to install
-   */
-  guides: number;
-  packages: number;
-  manual: Array<MomwManualMod>;
-  failed: Array<MomwFailedMod>;
-  notes: Array<string>;
-};
+export type MomwInstallReport = { modlist: string, installed: number, upToDate: number, 
+/**
+ * Guide entries of the list that have nothing to install
+ */
+guides: number, packages: number, manual: Array<MomwManualMod>, failed: Array<MomwFailedMod>, 
+/**
+ * Mods installed again because their files were changed or missing
+ */
+repaired: Array<string>, notes: Array<string>, };

@@ -139,9 +139,8 @@ pub fn run(base: &Path, action: &ModAction) -> Result<Option<String>, String> {
                 }
             }
         }
-        ModAction::Clean { path } => {
-            return Ok(Some(format!("not cleaned with tes3cmd: {path}")));
-        }
+        // Run after every mod is installed, with the MOMW Tools Pack's tes3cmd (tools::clean)
+        ModAction::Clean { .. } => {}
         ModAction::Unknown => return Ok(Some("skipped an action this version of Nerevar doesn't know".into())),
     }
     Ok(None)
@@ -173,7 +172,7 @@ mod tests {
         run(&base, &ModAction::Remove { path: Some("Mod/junk.txt".into()), paths: None }).unwrap();
         assert!(!base.join("Mod/junk.txt").exists());
         assert!(run(&base, &ModAction::Remove { path: Some("../outside".into()), paths: None }).is_err());
-        assert!(run(&base, &ModAction::Clean { path: "Mod/Sub/a.esp".into() }).unwrap().is_some());
+        assert!(run(&base, &ModAction::Clean { path: "Mod/Sub/a.esp".into(), arguments: None }).unwrap().is_none());
         let _ = std::fs::remove_dir_all(&base);
     }
 }

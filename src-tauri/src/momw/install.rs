@@ -268,7 +268,7 @@ impl Resolver {
         let packages: Vec<Package> = self.get_json(&format!("{api}/packages?sort=desc")).await.unwrap_or_default();
         if let Some(package) = packages.first() {
             let files: Vec<PackageFile> = self.get_json(&format!("{api}/packages/{}/package_files", package.id)).await?;
-            if let Some(file) = files.first() {
+            if let Some(file) = pick_platform_file(&files, |f| &f.file_name) {
                 return Ok(Source::Download(Download {
                     url: format!("https://gitlab.com/{project}/-/package_files/{}/download", file.id),
                     file_name: file.file_name.clone(),
@@ -297,6 +297,19 @@ impl Resolver {
         }
         response.json().await.map_err(|e| format!("Unexpected answer from {url}: {e}"))
     }
+}
+
+/// Packages with a file for each platform (the MOMW Tools Pack: -linux.tar.gz, -macos.zip, -windows.zip): this
+/// platform's file. Others have one file.
+fn pick_platform_file<T>(files: &[T], name: impl Fn(&T) -> &String) -> Option<&T> {
+    const PLATFORMS: &[&str] = &["windows", "linux", "macos"];
+    let current = if cfg!(windows) { "windows" } else if cfg!(target_os = "macos") { "macos" } else { "linux" };
+    let is_platform = |file: &T, platform: &str| name(file).to_ascii_lowercase().contains(platform);
+    files
+        .iter()
+        .find(|f| is_platform(f, current))
+        .or_else(|| files.iter().find(|f| !PLATFORMS.iter().any(|p| is_platform(f, p))))
+        .or_else(|| files.first())
 }
 
 pub fn archive_cache_dir() -> PathBuf {
@@ -706,11 +719,23 @@ pub async fn install_modlist(
         }
     }
 
-    emit(BackgroundOperationPhase::ApplyingLoadOrder, "Setting the load order from the list".into(), 0, 1, None);
+    emit(
+        BackgroundOperationPhase::InstallingMods,
+        "Generating the list's plugins with the MOMW Tools Pack".into(),
+        total,
+        total,
+        None,
+    );
     let mut state = Arc::try_unwrap(state).ok().and_then(|m| m.into_inner().ok()).unwrap_or_default();
     let data_dir_for_config = data_dir.clone();
     let (state, report) = tauri::async_runtime::spawn_blocking(move || {
         let mut report = report;
+        let base_data = load_load_order(&data_dir_for_config)
+            .ok()
+            .and_then(|order| order.base_game_data)
+            .or_else(crate::openmw_ini_importer::read_base_data_path);
+        let base_data = base_data.map(|path| path.trim_matches('"').to_string());
+        report.notes.extend(super::tools::generate_plugins(&data_dir_for_config, base_data.as_deref(), &config));
         apply_config(&data_dir_for_config, &slug, &config, &mut state, &mut report).map(|_| (state, report))
     })
     .await
@@ -723,6 +748,19 @@ pub async fn install_modlist(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn picks_this_platforms_package_file() {
+        let files: Vec<String> =
+            ["pack-linux.tar.gz", "pack-macos.zip", "pack-windows.zip"].iter().map(|s| s.to_string()).collect();
+        let picked = pick_platform_file(&files, |f| f).unwrap();
+        #[cfg(windows)]
+        assert_eq!(picked, "pack-windows.zip");
+        #[cfg(target_os = "linux")]
+        assert_eq!(picked, "pack-linux.tar.gz");
+        let single = vec!["mod-1.2.zip".to_string()];
+        assert_eq!(pick_platform_file(&single, |f| f).unwrap(), "mod-1.2.zip");
+    }
 
     #[test]
     fn finds_sources() {
@@ -779,5 +817,31 @@ mod tests {
         let settings = crate::instance_settings::load_instance_settings(&data).unwrap();
         assert_eq!(settings.openmw_cfg_overrides.iter().filter(|l| *l == "groundcover=grass.esp").count(), 1);
         let _ = std::fs::remove_dir_all(&data);
+    }
+}
+
+/// Live checks against Nexus Mods and Modding-OpenMW.com with the account linked in Nerevar. Not run by default:
+/// `cargo test live_ -- --ignored --nocapture`, with `NEREVAR_LIVE_LIST` (a list slug) and `NEREVAR_LIVE_DIR` (an
+/// empty data folder) for the install.
+#[cfg(test)]
+mod live {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_account() {
+        let client = NexusClient::from_stored_key().expect("no Nexus account linked in Nerevar");
+        let user = client.validate().await.expect("Nexus rejected the key");
+        println!("Nexus account: {} (premium: {})", user.name, user.is_premium);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_install() {
+        let slug = std::env::var("NEREVAR_LIVE_LIST").expect("set NEREVAR_LIVE_LIST");
+        let dir = PathBuf::from(std::env::var("NEREVAR_LIVE_DIR").expect("set NEREVAR_LIVE_DIR"));
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let report = install_modlist(dir, slug, false, false, None, cancel).await.expect("install failed");
+        println!("{}", serde_json::to_string_pretty(&report).unwrap());
     }
 }

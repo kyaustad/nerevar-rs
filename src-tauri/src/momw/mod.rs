@@ -8,6 +8,7 @@ pub mod actions;
 pub mod archive;
 pub mod commands;
 pub mod install;
+pub mod tools;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

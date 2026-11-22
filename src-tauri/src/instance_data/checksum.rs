@@ -130,6 +130,13 @@ fn hash_file_single_pass(relative: &str, path: &Path) -> Result<HashedFile, Stri
     })
 }
 
+/// Programs that come with some mods (the MOMW Tools Pack's tools) aren't synced: OpenMW never loads them.
+pub fn is_program(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ["exe", "dll", "so", "dylib"].iter().any(|program| ext.eq_ignore_ascii_case(program)))
+}
+
 fn collect_files(
     root: &Path,
     current: &Path,
@@ -143,7 +150,7 @@ fn collect_files(
         let path = entry.path();
         if path.is_dir() {
             collect_files(root, &path, out)?;
-        } else if path.is_file() {
+        } else if path.is_file() && !is_program(&path) {
             let relative = path
                 .strip_prefix(root)
                 .map_err(|_| "Path prefix error".to_string())?

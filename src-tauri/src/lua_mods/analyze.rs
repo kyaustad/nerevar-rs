@@ -71,8 +71,7 @@ const SIGNALS: &[Signal] = &[
     Signal { patterns: &["I.ItemUsage"], kind: Kind::PlayerHandler, description: "Handles item use" },
     Signal { patterns: &["onActivate"], kind: Kind::PlayerHandler, description: "Reacts to activation (onActivate)" },
     Signal { patterns: &["onPlayerAdded"], kind: Kind::PlayerHandler, description: "Reacts to a player joining (onPlayerAdded)" },
-    Signal { patterns: &["world.createRecord"], kind: Kind::Warning, description: "Creates records (world.createRecord): objects made from them aren't synced to other players" },
-    Signal { patterns: &["world.players"], kind: Kind::Warning, description: "Uses world.players, which only lists the local player in TES3MP-NG" },
+    Signal { patterns: &["world.createRecord"], kind: Kind::WorldChange, description: "Creates records (world.createRecord), which TES3MP-NG shares with every player" },
 ];
 
 const TIMER_PATTERNS: &[&str] = &["newSimulationTimer", "newGameTimer", "newUnsavableSimulationTimer", "newUnsavableGameTimer"];
@@ -117,7 +116,16 @@ fn suggest_from_code(code: &str) -> ScriptModeSuggestion {
     found.retain(|signal| signal.kind == Kind::Warning);
     let warnings = found.iter().map(|signal| signal.description.to_string()).collect();
 
+    // Scripts that take the first player as the one who acts only work where that player is the local one
+    let first_player = code.contains("world.players[1]") || code.contains("nearby.players[1]");
     let (mode, confidence) = match (world_change, autonomous) {
+        _ if first_player => {
+            reasons.push(
+                "Takes world.players[1] as the player who acts: only true on that player's own game, so it runs on                  each client"
+                    .into(),
+            );
+            (ScriptMode::Client, SuggestionConfidence::High)
+        }
         (true, true) => {
             reasons.push("Changes the shared world on its own: run it once, on the authority".into());
             let confidence = if player_handler { SuggestionConfidence::Medium } else { SuggestionConfidence::High };
@@ -271,12 +279,22 @@ end)";
     }
 
     #[test]
-    fn commented_out_code_and_warnings() {
+    fn scripts_acting_for_the_first_player_run_on_clients() {
+        let code = "local world = require('openmw.world')
+            return { engineHandlers = { onUpdate = function() world.createObject('x'):teleport(world.players[1].cell, v) end } }";
+        let suggestion = suggest_from_code(code);
+        assert_eq!(suggestion.mode, ScriptMode::Client);
+        assert_eq!(suggestion.confidence, SuggestionConfidence::High);
+    }
+
+    #[test]
+    fn commented_out_code_is_ignored() {
         let code = "-- world.createObject('x')\n--[[ onUpdate ]]\nlocal p = world.players\nworld.createRecord(r)";
         let suggestion = suggest_from_code(code);
         assert_eq!(suggestion.mode, ScriptMode::Client);
         assert!(!suggestion.reasons.iter().any(|r| r.contains("Places objects")));
-        assert_eq!(suggestion.warnings.len(), 2);
+        assert!(suggestion.reasons.iter().any(|r| r.contains("Creates records")));
+        assert!(suggestion.warnings.is_empty());
     }
 
     #[test]

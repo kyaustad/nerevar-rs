@@ -33,6 +33,7 @@ pub use paths::{
 pub use prune::prune_local_against_manifest;
 pub use remove::delete_package;
 pub use resolver::{resolve_load_order, resolve_synced_load_order};
+pub use scan::new_entry_id;
 pub use types::*;
 
 #[cfg(test)]

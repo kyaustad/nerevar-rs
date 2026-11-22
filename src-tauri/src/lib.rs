@@ -11,6 +11,8 @@ mod instance_settings;
 mod instance_setup;
 mod lua_mods;
 mod mo2_plugin;
+mod momw;
+mod nexus;
 mod nerevar_server;
 mod openmw_ini_importer;
 mod port_conflict;
@@ -435,6 +437,13 @@ pub fn run() {
             instance_settings::commands::save_instance_settings_command,
             lua_mods::commands::scan_instance_lua_mods,
             shaders::scan_instance_shaders,
+            nexus::nexus_account_status,
+            nexus::nexus_link_api_key,
+            nexus::nexus_sso_login,
+            nexus::nexus_unlink,
+            momw::commands::momw_list_modlists,
+            momw::commands::momw_install_modlist,
+            momw::commands::momw_cancel_install,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

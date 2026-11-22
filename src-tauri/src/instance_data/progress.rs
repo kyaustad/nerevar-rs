@@ -20,6 +20,9 @@ pub enum BackgroundOperationPhase {
     HashingFiles,
     WritingManifest,
     WritingLaunchCfg,
+    /// Modding-OpenMW lists
+    ResolvingMods,
+    InstallingMods,
     Complete,
 }
 

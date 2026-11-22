@@ -7,6 +7,17 @@ pub fn open_directory_picker() -> Result<String, String> {
     }
 }
 
+/// Mod archives to install as packages; empty when the player cancels.
+pub fn open_archive_file_picker() -> Vec<String> {
+    FileDialog::new()
+        .add_filter("Mod archives", &["zip", "7z", "rar"])
+        .pick_files()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|path| path.to_string_lossy().to_string())
+        .collect()
+}
+
 pub fn open_csv_file_picker() -> Result<String, String> {
     match FileDialog::new()
         .add_filter("CSV Files", &["csv"])

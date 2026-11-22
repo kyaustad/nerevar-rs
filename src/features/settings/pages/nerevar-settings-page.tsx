@@ -10,6 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useConfig } from "@/features/config/context/config-context-provider";
+import { NexusAccountSection } from "@/features/settings/components/nexus-account-section";
 import { useSyncHostStatus } from "@/features/instances/hooks/use-sync-host-status";
 import { cn } from "@/lib/utils";
 import { invoke } from "@tauri-apps/api/core";
@@ -170,6 +171,12 @@ export function NerevarSettingsPage() {
             )}
             Save and restart sync server
           </Button>
+        </CardContent>
+      </Card>
+
+      <Card className={cardClass}>
+        <CardContent className="py-5">
+          <NexusAccountSection />
         </CardContent>
       </Card>
     </div>

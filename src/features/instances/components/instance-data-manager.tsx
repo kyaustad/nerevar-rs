@@ -22,6 +22,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectItemText,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -53,22 +54,37 @@ import {
 } from "@/features/instances/lib/load-order-utils";
 import { formatByteSize } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { MomwInstallDialog } from "@/features/instances/components/momw-install-dialog";
+import {
+  ConflictIndicator,
+  ConflictsContext,
+  ConflictsDialog,
+} from "@/features/instances/components/package-conflicts";
 import type {
   InstanceConfig,
   LoadOrder,
   LoadOrderEntry,
   Mo2ModlistImportResult,
+  MomwInstallReport,
   NerevarManifest,
+  NexusDownloadEvent,
+  PackageConflicts,
+  PackageInstallResult,
   ShaderPackageKind,
 } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
   FolderSync,
   GripVertical,
+  Library,
   Loader2,
+  PackagePlus,
   RefreshCw,
   Save,
   Trash2,
@@ -164,8 +180,24 @@ export function InstanceDataManager({
   const hosting = isRunning("hostManifest");
   const importingMo2 = isRunning("importMo2Modlist");
   const writingLaunchCfg = isRunning("writeLaunchCfg");
+  const installingArchive = isRunning("installArchive");
+  const installingModlist = isRunning("installModlist");
   const operationBusy =
-    scanning || saving || hosting || importingMo2 || writingLaunchCfg;
+    scanning ||
+    saving ||
+    hosting ||
+    importingMo2 ||
+    writingLaunchCfg ||
+    installingArchive ||
+    installingModlist;
+  const [momwOpen, setMomwOpen] = useState(false);
+  const [momwReport, setMomwReport] = useState<MomwInstallReport | null>(null);
+  const [conflicts, setConflicts] = useState<Map<string, PackageConflicts>>(
+    new Map(),
+  );
+  const [conflictEntry, setConflictEntry] = useState<LoadOrderEntry | null>(
+    null,
+  );
 
   const clearMo2ContentOrder = (order: LoadOrder): LoadOrder => ({
     ...order,
@@ -196,6 +228,116 @@ export function InstanceDataManager({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // File conflicts of the load order being edited (MO2's lightning icons)
+  useEffect(() => {
+    if (!loadOrder) return;
+    const timer = window.setTimeout(() => {
+      invoke<PackageConflicts[]>("package_conflicts", { instanceId, loadOrder })
+        .then((result) =>
+          setConflicts(new Map(result.map((c) => [c.entryId, c]))),
+        )
+        .catch(() => setConflicts(new Map()));
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [instanceId, loadOrder]);
+
+  const installArchives = useCallback(
+    async (paths: string[]) => {
+      for (const archivePath of paths) {
+        try {
+          const result = await runOperation({
+            instanceId,
+            instanceName: instance.name,
+            kind: "installArchive",
+            detail: archivePath.split(/[\\/]/).pop(),
+            task: () =>
+              invoke<PackageInstallResult>("install_archive_package", {
+                instanceId,
+                archivePath,
+              }),
+          });
+          toast.success(
+            `${result.replaced ? "Updated" : "Installed"} ${result.package}`,
+          );
+          for (const note of result.notes) toast.warning(note);
+        } catch (error) {
+          toast.error(`Failed to install ${archivePath}: ${error}`);
+        }
+      }
+      await refresh();
+    },
+    [instance.name, instanceId, refresh, runOperation],
+  );
+
+  const pickArchives = async () => {
+    const paths = await invoke<string[]>("open_archive_file_picker");
+    if (paths.length > 0) await installArchives(paths);
+  };
+
+  // Archives dropped on the window install as packages, like in MO2
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type !== "drop") return;
+        const archives = event.payload.paths.filter((path) =>
+          /\.(zip|7z|rar)$/i.test(path),
+        );
+        if (archives.length > 0) void installArchives(archives);
+      })
+      .then((stop) => {
+        unlisten = stop;
+      });
+    return () => unlisten?.();
+  }, [installArchives]);
+
+  // "Mod Manager Download" buttons on Nexus install into this instance while its data manager is open
+  useEffect(() => {
+    void invoke("nexus_set_download_target", { instanceId });
+    let unlisten: (() => void) | undefined;
+    void listen<NexusDownloadEvent>("nexus-download", (event) => {
+      const download = event.payload;
+      if (download.state === "unhandled") {
+        toast.warning(download.message);
+        return;
+      }
+      if (download.instanceId !== instanceId) return;
+      if (download.state === "started") toast.info(download.message);
+      else if (download.state === "installed") {
+        toast.success(download.message);
+        void refresh();
+      } else toast.error(`Nexus download failed: ${download.message}`);
+    }).then((stop) => {
+      unlisten = stop;
+    });
+    return () => {
+      unlisten?.();
+      void invoke("nexus_set_download_target", { instanceId: null });
+    };
+  }, [instanceId, refresh]);
+
+  const installModlist = async (slug: string, beta: boolean) => {
+    try {
+      const report = await runOperation({
+        instanceId,
+        instanceName: instance.name,
+        kind: "installModlist",
+        detail: slug,
+        task: (operationId) =>
+          invoke<MomwInstallReport>("momw_install_modlist", {
+            instanceId,
+            slug,
+            beta,
+            operationId,
+          }),
+      });
+      setMomwReport(report);
+      await refresh();
+    } catch (error) {
+      toast.error(`Failed to install ${slug}: ${error}`);
+    }
+  };
 
   const saveLoadOrder = async () => {
     if (!loadOrder) return;
@@ -428,147 +570,182 @@ export function InstanceDataManager({
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-1 pb-10">
-      <Button
-        variant="outline"
-        size="sm"
-        className="w-fit font-display text-sm tracking-[0.2em] text-foreground/70 uppercase hover:text-accent"
-        asChild
+    <TooltipProvider>
+      <ConflictsContext.Provider
+        value={{ byEntry: conflicts, onShow: setConflictEntry }}
       >
-        <Link href={`/instances/${encodeURIComponent(instanceId)}`}>
-          <ArrowLeft data-icon="inline-start" />
-          Instance detail
-        </Link>
-      </Button>
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-1 pb-10">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-fit font-display text-sm tracking-[0.2em] text-foreground/70 uppercase hover:text-accent"
+            asChild
+          >
+            <Link href={`/instances/${encodeURIComponent(instanceId)}`}>
+              <ArrowLeft data-icon="inline-start" />
+              Instance detail
+            </Link>
+          </Button>
 
-      <Card className={INSTANCE_DATA_CARD_CLASS} disableHover disableTap>
-        <CardHeader className="border-b border-border/50 space-y-2 pb-4 pt-5">
-          <CardTitle className="font-display text-3xl tracking-[0.08em] text-gradient-gold">
-            Data manager
-          </CardTitle>
-          <CardDescription className="font-serif text-left text-base leading-relaxed text-foreground/75">
-            {instance.name} — order mod folders and plugins, then publish a
-            manifest for sync.
-          </CardDescription>
-        </CardHeader>
+          <Card className={INSTANCE_DATA_CARD_CLASS} disableHover disableTap>
+            <CardHeader className="border-b border-border/50 space-y-2 pb-4 pt-5">
+              <CardTitle className="font-display text-3xl tracking-[0.08em] text-gradient-gold">
+                Data manager
+              </CardTitle>
+              <CardDescription className="font-serif text-left text-base leading-relaxed text-foreground/75">
+                {instance.name} — order mod folders and plugins, then publish a
+                manifest for sync.
+              </CardDescription>
+            </CardHeader>
 
-        <CardContent className="flex flex-col gap-4 py-5">
-          <DataManagerToolbar
-            scanning={scanning}
-            loadOrder={loadOrder}
-            saving={saving}
-            hosting={hosting}
-            importingMo2={importingMo2}
-            writingLaunchCfg={writingLaunchCfg}
-            operationBusy={operationBusy}
-            onRefresh={() => void refresh()}
-            onImportMo2={() => void importMo2Modlist()}
-            onSave={() => void saveLoadOrder()}
-            onWriteLaunchCfg={() => void writeLaunchCfg()}
-            onStartHosting={() => void startHosting()}
+            <CardContent className="flex flex-col gap-4 py-5">
+              <DataManagerToolbar
+                scanning={scanning}
+                loadOrder={loadOrder}
+                saving={saving}
+                hosting={hosting}
+                importingMo2={importingMo2}
+                writingLaunchCfg={writingLaunchCfg}
+                operationBusy={operationBusy}
+                installingArchive={installingArchive}
+                installingModlist={installingModlist}
+                onRefresh={() => void refresh()}
+                onInstallArchive={() => void pickArchives()}
+                onInstallModlist={() => {
+                  setMomwReport(null);
+                  setMomwOpen(true);
+                }}
+                onImportMo2={() => void importMo2Modlist()}
+                onSave={() => void saveLoadOrder()}
+                onWriteLaunchCfg={() => void writeLaunchCfg()}
+                onStartHosting={() => void startHosting()}
+              />
+
+              {loadOrder?.baseGameData ? (
+                <p className="font-mono text-sm text-foreground/60 truncate">
+                  Base game: {loadOrder.baseGameData}
+                </p>
+              ) : null}
+
+              {/* MO2's layout: packages on the left, plugins on the right */}
+              <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+                <Tabs defaultValue="directories" className="min-w-0">
+                  <TabsList variant="line" className="w-full justify-start">
+                    <TabsTrigger value="directories">Mods</TabsTrigger>
+                    <TabsTrigger value="shaders">
+                      Shaders
+                      {shaderEntries.length > 0 ? (
+                        <Badge variant="secondary" className="ml-1.5 text-xs">
+                          {shaderEntries.length}
+                        </Badge>
+                      ) : null}
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="directories" className="mt-4">
+                    <DirectoryList
+                      initialLoading={initialLoading}
+                      loadOrder={loadOrder}
+                      sortedEntries={dataEntries}
+                      deletingEntryId={deletingEntryId}
+                      emptyMessage="No mods yet. Install mod archives (or drop them here), install a Modding-OpenMW list, use Nexus' Mod Manager Download buttons, or copy mod folders into the instance's data folder and rescan."
+                      onToggle={toggleEntry}
+                      {...listHandlers(dataEntries)}
+                      onPriorityChange={updateEntryPriority}
+                      onShaderKindChange={setShaderKind}
+                      onRequestDelete={setPendingDeleteEntry}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="shaders" className="mt-4 space-y-3">
+                    <p className="font-serif text-sm leading-relaxed text-foreground/65">
+                      Shader packages are listed and synced apart from the data
+                      packages. <strong>Post-processing</strong> packages (
+                      <code>shaders/*.omwfx</code>) are added after the data
+                      packages; choose which run in the instance settings&apos;
+                      post-processing tab. <strong>Core shaders</strong> (
+                      <code>resources/shaders</code>, like PBR shaders) replace
+                      TES3MP-NG&apos;s own shaders in each player&apos;s
+                      install, in this order; disabling or removing one gives
+                      the original shaders back. Only enable one core shader set
+                      unless they are made to work together.
+                    </p>
+                    <DirectoryList
+                      initialLoading={initialLoading}
+                      loadOrder={loadOrder}
+                      sortedEntries={shaderEntries}
+                      deletingEntryId={deletingEntryId}
+                      emptyMessage="No shader packages. Packages with post-processing shaders or core shaders are found when you rescan, or choose a package's type in the Directories tab."
+                      onToggle={toggleEntry}
+                      {...listHandlers(shaderEntries)}
+                      onPriorityChange={updateEntryPriority}
+                      onShaderKindChange={setShaderKind}
+                      onRequestDelete={setPendingDeleteEntry}
+                    />
+                  </TabsContent>
+                </Tabs>
+
+                <section className="min-w-0 space-y-2">
+                  <h2 className="flex h-9 items-center font-display text-sm tracking-[0.12em] text-foreground/80 uppercase">
+                    Plugins
+                  </h2>
+                  <div className="max-h-[min(60vh,720px)] overflow-y-auto rounded-lg border border-border/40 pr-1">
+                    <PluginList
+                      loadOrder={loadOrder}
+                      sortedEntries={sortedEntries}
+                      onTogglePlugin={togglePlugin}
+                      onMovePlugin={movePlugin}
+                      onContentOrderChange={(nextContentOrder) => {
+                        setLoadOrder((current) =>
+                          current
+                            ? {
+                                ...current,
+                                contentOrder: nextContentOrder,
+                              }
+                            : current,
+                        );
+                      }}
+                    />
+                  </div>
+                </section>
+              </div>
+            </CardContent>
+          </Card>
+
+          <MomwInstallDialog
+            open={momwOpen}
+            installing={installingModlist}
+            report={momwReport}
+            onOpenChange={setMomwOpen}
+            onInstall={(slug, beta) => void installModlist(slug, beta)}
+          />
+          <ConflictsDialog
+            entry={conflictEntry}
+            conflicts={
+              conflictEntry ? conflicts.get(conflictEntry.id) : undefined
+            }
+            onOpenChange={(open) => {
+              if (!open) setConflictEntry(null);
+            }}
           />
 
-          {loadOrder?.baseGameData ? (
-            <p className="font-mono text-sm text-foreground/60 truncate">
-              Base game: {loadOrder.baseGameData}
-            </p>
-          ) : null}
-
-          <Tabs defaultValue="directories">
-            <TabsList variant="line" className="w-full justify-start">
-              <TabsTrigger value="directories">Directories</TabsTrigger>
-              <TabsTrigger value="shaders">
-                Shaders
-                {shaderEntries.length > 0 ? (
-                  <Badge variant="secondary" className="ml-1.5 text-xs">
-                    {shaderEntries.length}
-                  </Badge>
-                ) : null}
-              </TabsTrigger>
-              <TabsTrigger value="plugins">Plugins</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="directories" className="mt-4">
-              <DirectoryList
-                initialLoading={initialLoading}
-                loadOrder={loadOrder}
-                sortedEntries={dataEntries}
-                deletingEntryId={deletingEntryId}
-                emptyMessage="No packages found. Add mod folders directly in the instance data directory, then rescan."
-                onToggle={toggleEntry}
-                {...listHandlers(dataEntries)}
-                onPriorityChange={updateEntryPriority}
-                onShaderKindChange={setShaderKind}
-                onRequestDelete={setPendingDeleteEntry}
-              />
-            </TabsContent>
-
-            <TabsContent value="shaders" className="mt-4 space-y-3">
-              <p className="font-serif text-sm leading-relaxed text-foreground/65">
-                Shader packages are listed and synced apart from the data
-                packages. <strong>Post-processing</strong> packages (
-                <code>shaders/*.omwfx</code>) are added after the data
-                packages; choose which run in the instance settings&apos;
-                post-processing tab. <strong>Core shaders</strong> (
-                <code>resources/shaders</code>, like PBR shaders) replace
-                TES3MP-NG&apos;s own shaders in each player&apos;s install, in
-                this order; disabling or removing one gives the original
-                shaders back. Only enable one core shader set unless they are
-                made to work together.
-              </p>
-              <DirectoryList
-                initialLoading={initialLoading}
-                loadOrder={loadOrder}
-                sortedEntries={shaderEntries}
-                deletingEntryId={deletingEntryId}
-                emptyMessage="No shader packages. Packages with post-processing shaders or core shaders are found when you rescan, or choose a package's type in the Directories tab."
-                onToggle={toggleEntry}
-                {...listHandlers(shaderEntries)}
-                onPriorityChange={updateEntryPriority}
-                onShaderKindChange={setShaderKind}
-                onRequestDelete={setPendingDeleteEntry}
-              />
-            </TabsContent>
-
-            <TabsContent value="plugins" className="mt-4">
-              <div className="max-h-[min(60vh,720px)] overflow-y-auto rounded-lg border border-border/40 pr-1">
-                <PluginList
-                  loadOrder={loadOrder}
-                  sortedEntries={sortedEntries}
-                  onTogglePlugin={togglePlugin}
-                  onMovePlugin={movePlugin}
-                  onContentOrderChange={(nextContentOrder) => {
-                    setLoadOrder((current) =>
-                      current
-                        ? {
-                            ...current,
-                            contentOrder: nextContentOrder,
-                          }
-                        : current,
-                    );
-                  }}
-                />
-              </div>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
-
-      <DeletePackageDialog
-        entry={pendingDeleteEntry}
-        deleting={pendingDeleteEntry?.id === deletingEntryId}
-        onOpenChange={(open) => {
-          if (!open && pendingDeleteEntry?.id !== deletingEntryId) {
-            setPendingDeleteEntry(null);
-          }
-        }}
-        onConfirm={() => {
-          if (pendingDeleteEntry) {
-            void deleteEntry(pendingDeleteEntry);
-          }
-        }}
-      />
-    </div>
+          <DeletePackageDialog
+            entry={pendingDeleteEntry}
+            deleting={pendingDeleteEntry?.id === deletingEntryId}
+            onOpenChange={(open) => {
+              if (!open && pendingDeleteEntry?.id !== deletingEntryId) {
+                setPendingDeleteEntry(null);
+              }
+            }}
+            onConfirm={() => {
+              if (pendingDeleteEntry) {
+                void deleteEntry(pendingDeleteEntry);
+              }
+            }}
+          />
+        </div>
+      </ConflictsContext.Provider>
+    </TooltipProvider>
   );
 }
 
@@ -580,7 +757,11 @@ function DataManagerToolbar({
   importingMo2,
   writingLaunchCfg,
   operationBusy,
+  installingArchive,
+  installingModlist,
   onRefresh,
+  onInstallArchive,
+  onInstallModlist,
   onImportMo2,
   onSave,
   onWriteLaunchCfg,
@@ -593,7 +774,11 @@ function DataManagerToolbar({
   importingMo2: boolean;
   writingLaunchCfg: boolean;
   operationBusy: boolean;
+  installingArchive: boolean;
+  installingModlist: boolean;
   onRefresh: () => void;
+  onInstallArchive: () => void;
+  onInstallModlist: () => void;
   onImportMo2: () => void;
   onSave: () => void;
   onWriteLaunchCfg: () => void;
@@ -613,6 +798,33 @@ function DataManagerToolbar({
           <RefreshCw data-icon="inline-start" />
         )}
         {scanning ? "Scanning…" : "Rescan"}
+      </Button>
+      <Button
+        variant="outline"
+        className="h-10 text-base"
+        disabled={operationBusy}
+        onClick={onInstallArchive}
+        title="Install mod archives (zip, 7z, rar) as packages; you can also drop them on the window"
+      >
+        {installingArchive ? (
+          <Loader2 className="animate-spin" data-icon="inline-start" />
+        ) : (
+          <PackagePlus data-icon="inline-start" />
+        )}
+        Install archive
+      </Button>
+      <Button
+        variant="outline"
+        className="h-10 text-base"
+        disabled={operationBusy && !installingModlist}
+        onClick={onInstallModlist}
+      >
+        {installingModlist ? (
+          <Loader2 className="animate-spin" data-icon="inline-start" />
+        ) : (
+          <Library data-icon="inline-start" />
+        )}
+        Modding-OpenMW list
       </Button>
       <Button
         variant="outline"
@@ -850,7 +1062,9 @@ function DirectoryList({
                 onMoveUp={() => onMoveUp(index)}
                 onMoveDown={() => onMoveDown(index)}
                 onPriorityChange={(value) => onPriorityChange(entry.id, value)}
-                onShaderKindChange={(kind) => onShaderKindChange(entry.id, kind)}
+                onShaderKindChange={(kind) =>
+                  onShaderKindChange(entry.id, kind)
+                }
                 onRequestDelete={() => onRequestDelete(entry)}
               />
             ))}
@@ -973,9 +1187,9 @@ function PluginList({
   );
 
   const activePlugin = activePluginId
-    ? effectiveContentOrder.find(
+    ? (effectiveContentOrder.find(
         (plugin) => plugin.toLowerCase() === activePluginId,
-      ) ?? null
+      ) ?? null)
     : null;
 
   const moveGlobalPlugin = useCallback(
@@ -1031,8 +1245,9 @@ function PluginList({
               Global plugin load order
             </p>
             <p className="font-serif text-sm text-foreground/65">
-              Controls final <code>content=</code> order in the client&apos;s openmw.cfg. Base
-              game ESMs are included and can be reordered with other plugins.
+              Controls final <code>content=</code> order in the client&apos;s
+              openmw.cfg. Base game ESMs are included and can be reordered with
+              other plugins.
             </p>
           </div>
           <DndContext
@@ -1408,6 +1623,7 @@ function DirectoryRowShell({
         />
         <DirectoryRowLabels title={entry.name} subtitle={entry.relativeDir} />
       </label>
+      {isOverlay ? null : <ConflictIndicator entry={entry} />}
       <PriorityInput
         value={entry.priority}
         disabled={isOverlay}
@@ -1470,9 +1686,7 @@ function PackageTypeSelect({
       value={entry.shaderKind ?? DATA_PACKAGE}
       disabled={disabled}
       onValueChange={(value) =>
-        onChange(
-          value === DATA_PACKAGE ? null : (value as ShaderPackageKind),
-        )
+        onChange(value === DATA_PACKAGE ? null : (value as ShaderPackageKind))
       }
     >
       <SelectTrigger
@@ -1484,10 +1698,16 @@ function PackageTypeSelect({
       </SelectTrigger>
       <SelectContent position="popper">
         <SelectItem value={DATA_PACKAGE}>
-          {entry.kind === "mod" ? "Mod" : "Replacer"}
+          <SelectItemText>
+            {entry.kind === "mod" ? "Mod" : "Replacer"}
+          </SelectItemText>
         </SelectItem>
-        <SelectItem value="postProcessing">Post-processing</SelectItem>
-        <SelectItem value="coreShaders">Core shaders</SelectItem>
+        <SelectItem value="postProcessing">
+          <SelectItemText>Post-processing</SelectItemText>
+        </SelectItem>
+        <SelectItem value="coreShaders">
+          <SelectItemText>Core shaders</SelectItemText>
+        </SelectItem>
       </SelectContent>
     </Select>
   );

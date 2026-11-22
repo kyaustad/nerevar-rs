@@ -137,9 +137,11 @@ pub fn find_conflicts(data_dir: &Path, load_order: &LoadOrder) -> Vec<PackageCon
 }
 
 #[tauri::command]
+/// Conflicts of the instance's packages, in `load_order` (the one being edited) or the saved load order.
 pub async fn package_conflicts(
     state: State<'_, Mutex<AppState>>,
     instance_id: String,
+    load_order: Option<LoadOrder>,
 ) -> Result<Vec<PackageConflicts>, String> {
     let data_dir = {
         let guard = state.lock().map_err(|_| "App state lock poisoned".to_string())?;
@@ -149,7 +151,10 @@ pub async fn package_conflicts(
         )
     };
     tauri::async_runtime::spawn_blocking(move || {
-        let load_order = load_load_order(&data_dir)?;
+        let load_order = match load_order {
+            Some(load_order) => load_order,
+            None => load_load_order(&data_dir)?,
+        };
         Ok(find_conflicts(&data_dir, &load_order))
     })
     .await

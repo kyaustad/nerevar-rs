@@ -18,6 +18,8 @@ const PHASE_LABELS: Record<BackgroundOperationPhase, string> = {
   hashingFiles: "Hashing files",
   writingManifest: "Writing manifest",
   writingLaunchCfg: "Writing client config",
+  resolvingMods: "Checking mods",
+  installingMods: "Installing mods",
   complete: "Complete",
 };
 

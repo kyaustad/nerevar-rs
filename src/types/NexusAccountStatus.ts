@@ -7,9 +7,5 @@ export type NexusAccountStatus = {
   linked: boolean;
   name: string | null;
   premium: boolean;
-  /**
-   * Whether this build of Nerevar has a Nexus application id for SSO login.
-   */
-  ssoAvailable: boolean;
   error: string | null;
 };

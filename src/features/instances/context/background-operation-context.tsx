@@ -15,7 +15,9 @@ export type BackgroundOperationKind =
   | "importMo2Modlist"
   | "saveLoadOrder"
   | "writeLaunchCfg"
-  | "hostManifest";
+  | "hostManifest"
+  | "installArchive"
+  | "installModlist";
 
 export type BackgroundOperationStatus = "running" | "success" | "error";
 
@@ -45,6 +47,8 @@ const OPERATION_LABELS: Record<BackgroundOperationKind, string> = {
   saveLoadOrder: "Saving load order",
   writeLaunchCfg: "Writing client config",
   hostManifest: "Building sync manifest",
+  installArchive: "Installing mod",
+  installModlist: "Installing Modding-OpenMW list",
 };
 
 type RunOperationOptions<T> = {

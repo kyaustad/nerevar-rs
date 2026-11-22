@@ -92,6 +92,11 @@ fn open_directory_picker() -> Result<String, String> {
 }
 
 #[tauri::command]
+fn open_archive_file_picker() -> Vec<String> {
+    file_actions::open_archive_file_picker()
+}
+
+#[tauri::command]
 fn open_csv_file_picker() -> Result<String, String> {
     file_actions::open_csv_file_picker().map_err(|e| e.to_string())
 }
@@ -402,6 +407,7 @@ pub fn run() {
             complete_onboarding,
             open_directory_picker,
             open_csv_file_picker,
+            open_archive_file_picker,
             open_esm_file_picker,
             open_directory,
             set_root_path,

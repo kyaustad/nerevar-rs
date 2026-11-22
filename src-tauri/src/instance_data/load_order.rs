@@ -107,7 +107,16 @@ pub fn merge_scanned_with_data_dir(
     load_order: &mut LoadOrder,
     scanned: Vec<super::types::ScannedPackage>, // ScannedPackage from scan module
 ) {
+    // Folders holding nested packages (`Category/Mod/00 Core` of Modding-OpenMW lists) aren't packages themselves
+    let parents: std::collections::HashSet<String> = load_order
+        .entries
+        .iter()
+        .filter_map(|e| e.relative_dir.split_once('/').map(|(top, _)| top.to_ascii_lowercase()))
+        .collect();
     for package in scanned {
+        if parents.contains(&package.relative_dir.to_ascii_lowercase()) {
+            continue;
+        }
         if let Some(existing) = load_order
             .entries
             .iter_mut()

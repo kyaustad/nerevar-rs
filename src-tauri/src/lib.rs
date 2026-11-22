@@ -13,6 +13,7 @@ mod lua_mods;
 mod mo2_plugin;
 mod momw;
 mod nexus;
+mod packages;
 mod nerevar_server;
 mod openmw_ini_importer;
 mod port_conflict;
@@ -153,6 +154,11 @@ async fn generate_default_global_openmw_config(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // A second Nerevar, started by an nxm:// link, hands the link to this one and quits
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            nexus::nxm::handle_args(app, args);
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(tauri_plugin_log::log::LevelFilter::Info)
@@ -380,6 +386,9 @@ pub fn run() {
                     }
                 }
             });
+            // Nerevar started by an nxm:// link
+            nexus::nxm::handle_args(app.handle(), std::env::args().skip(1));
+
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
@@ -439,8 +448,12 @@ pub fn run() {
             shaders::scan_instance_shaders,
             nexus::nexus_account_status,
             nexus::nexus_link_api_key,
-            nexus::nexus_sso_login,
             nexus::nexus_unlink,
+            nexus::nxm::nexus_link_handler_status,
+            nexus::nxm::nexus_set_link_handler,
+            nexus::nxm::nexus_set_download_target,
+            packages::install_archive_package,
+            packages::conflicts::package_conflicts,
             momw::commands::momw_list_modlists,
             momw::commands::momw_install_modlist,
             momw::commands::momw_cancel_install,

@@ -20,9 +20,13 @@ fn prune_orphan_package_dirs(data_dir: &Path, manifest: &NerevarManifest) -> Res
         return Ok(());
     }
 
-    let manifest_dirs: HashSet<&str> = manifest
+    // The top folders of packages; nested packages (`Category/Mod/Data`) keep their top folder
+    let manifest_dirs: HashSet<String> = manifest
         .all_packages()
-        .map(|package| package.relative_dir.as_str())
+        .map(|package| {
+            let normalized = package.relative_dir.replace('\\', "/");
+            normalized.split('/').next().unwrap_or_default().to_ascii_lowercase()
+        })
         .collect();
 
     for entry in std::fs::read_dir(data_dir).map_err(|e| e.to_string())? {
@@ -37,7 +41,7 @@ fn prune_orphan_package_dirs(data_dir: &Path, manifest: &NerevarManifest) -> Res
             continue;
         }
 
-        if !manifest_dirs.contains(name.as_str()) {
+        if !manifest_dirs.contains(&name.to_ascii_lowercase()) {
             std::fs::remove_dir_all(&path).map_err(|e| {
                 format!("Failed to remove orphaned package {}: {e}", path.display())
             })?;

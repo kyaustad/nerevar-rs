@@ -48,8 +48,17 @@ pub async fn momw_install_modlist(
         }
         *current = Some(cancel.clone());
     }
+    let link_handler = crate::nexus::nxm::nexus_link_handler_status(app.clone()).registered;
     let progress = operation_id.map(|id| ProgressEmitter::new(app, instance_id.clone(), id));
-    let result = install_modlist(resolve_package_data_dir(&instance), slug, beta.unwrap_or(false), progress, cancel).await;
+    let result = install_modlist(
+        resolve_package_data_dir(&instance),
+        slug,
+        beta.unwrap_or(false),
+        link_handler,
+        progress,
+        cancel,
+    )
+    .await;
     if let Ok(mut current) = cancel_flag().lock() {
         *current = None;
     }

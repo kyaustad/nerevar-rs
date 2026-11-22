@@ -92,13 +92,26 @@ fn save_state(data_dir: &Path, state: &InstallState) -> Result<(), String> {
 
 /// Where a download comes from.
 #[derive(Debug, Clone)]
-struct Download {
-    url: String,
-    file_name: String,
+pub struct Download {
+    pub url: String,
+    pub file_name: String,
     /// Changes when the mod's file changes
-    version: String,
-    size: Option<u64>,
+    pub version: String,
+    pub size: Option<u64>,
+    /// Free Nexus accounts: the file's link comes from the player's click on its download button
+    pub click: Option<NexusClick>,
 }
+
+#[derive(Debug, Clone)]
+pub struct NexusClick {
+    game: String,
+    mod_id: u64,
+    file_id: u64,
+    page: String,
+}
+
+/// How long a free account's install waits for the click on a file's download button
+const CLICK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 
 enum Source {
     Download(Download),
@@ -135,6 +148,8 @@ fn gitlab_project(url: &str) -> Option<String> {
 struct Resolver {
     nexus: Option<NexusClient>,
     premium: bool,
+    /// Whether nxm:// links reach Nerevar, for free accounts
+    link_handler: bool,
     file_lists: HashMap<(String, u64), NexusFileList>,
     http: reqwest::Client,
 }
@@ -152,7 +167,7 @@ impl Resolver {
                 .filter(|name| !name.is_empty())
                 .or_else(|| url.split(['?', '#']).next()?.rsplit('/').next().map(str::to_string))
                 .unwrap_or_else(|| format!("{}.download", item.dir));
-            return Ok(Source::Download(Download { version: url.clone(), url, file_name, size: None }));
+            return Ok(Source::Download(Download { version: url.clone(), url, file_name, size: None, click: None }));
         }
 
         if let Some((game, mod_id)) = nexus_ids(&item.url) {
@@ -170,9 +185,10 @@ impl Resolver {
         let Some(nexus) = self.nexus.clone() else {
             return Ok(Source::Manual("Link your Nexus Mods account in Nerevar's settings".into()));
         };
-        if !self.premium {
+        if !self.premium && !self.link_handler {
             return Ok(Source::Manual(format!(
-                "Download it from {} (automatic Nexus downloads need a Premium account)",
+                "Download it from {}, or turn on \"Nerevar handles Nexus downloads\" in Nerevar's settings to click \
+                 through the list's mods",
                 item.url
             )));
         }
@@ -215,12 +231,20 @@ impl Resolver {
                 item.url
             )));
         };
-        let url = nexus.download_link(game, mod_id, file.file_id).await?;
+        let file_name =
+            if file.file_name.is_empty() { format!("{}.archive", file.file_id) } else { file.file_name.clone() };
+        let (url, click) = if self.premium {
+            (nexus.download_link(game, mod_id, file.file_id).await?, None)
+        } else {
+            let page = format!("https://www.nexusmods.com/{game}/mods/{mod_id}?tab=files&file_id={}&nmm=1", file.file_id);
+            (String::new(), Some(NexusClick { game: game.to_string(), mod_id, file_id: file.file_id, page }))
+        };
         Ok(Source::Download(Download {
             url,
-            file_name: if file.file_name.is_empty() { format!("{}.archive", file.file_id) } else { file.file_name.clone() },
+            file_name,
             version: format!("nexus:{}", file.file_id),
             size: file.size_in_bytes,
+            click,
         }))
     }
 
@@ -250,6 +274,7 @@ impl Resolver {
                     file_name: file.file_name.clone(),
                     version: format!("gitlab:{}", file.id),
                     size: file.size,
+                    click: None,
                 }));
             }
         }
@@ -261,6 +286,7 @@ impl Resolver {
             file_name: format!("{}-{}.zip", project.replace('/', "-"), &commit.id[..commit.id.len().min(12)]),
             version: format!("gitlab-commit:{}", commit.id),
             size: None,
+            click: None,
         }))
     }
 
@@ -273,7 +299,7 @@ impl Resolver {
     }
 }
 
-fn archive_cache_dir() -> PathBuf {
+pub fn archive_cache_dir() -> PathBuf {
     dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("Nerevar").join("archives")
 }
 
@@ -281,7 +307,38 @@ fn safe_file_name(name: &str) -> String {
     name.chars().map(|c| if r#"<>:"/\|?*"#.contains(c) || c.is_control() { '_' } else { c }).collect()
 }
 
-async fn download_file(http: &reqwest::Client, download: &Download, dest: &Path) -> Result<(), String> {
+/// For free accounts: opens the file's page and waits for the player's click on its download button.
+async fn link_from_click(
+    nexus: &NexusClient,
+    click: &NexusClick,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<String, String> {
+    let waiting = crate::nexus::nxm::wait_for(click.mod_id, click.file_id);
+    opener::open_browser(&click.page).map_err(|e| format!("Couldn't open {}: {e}", click.page))?;
+    let started = std::time::Instant::now();
+    let mut waiting = std::pin::pin!(waiting);
+    let link = loop {
+        tokio::select! {
+            link = &mut waiting => break link.map_err(|_| "Stopped waiting for the download".to_string())?,
+            _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {
+                let timed_out = started.elapsed() > CLICK_TIMEOUT;
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) || timed_out {
+                    crate::nexus::nxm::stop_waiting(click.mod_id, click.file_id);
+                    return Err(if timed_out {
+                        "Nobody clicked \"Mod Manager Download\" on the mod's page".into()
+                    } else {
+                        "Install cancelled".into()
+                    });
+                }
+            }
+        }
+    };
+    nexus
+        .download_link_with_key(&click.game, click.mod_id, click.file_id, link.key.as_deref(), link.expires.as_deref())
+        .await
+}
+
+pub async fn download_file(http: &reqwest::Client, download: &Download, dest: &Path) -> Result<(), String> {
     if let (Ok(metadata), Some(size)) = (std::fs::metadata(dest), download.size) {
         if metadata.len() == size {
             return Ok(()); // downloaded before
@@ -479,6 +536,7 @@ pub async fn install_modlist(
     data_dir: PathBuf,
     slug: String,
     beta: bool,
+    link_handler: bool,
     progress: Option<ProgressEmitter>,
     cancel: Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<MomwInstallReport, String> {
@@ -510,7 +568,8 @@ pub async fn install_modlist(
         None => false,
     };
     let http = reqwest::Client::builder().user_agent(crate::nexus::user_agent()).build().map_err(|e| e.to_string())?;
-    let mut resolver = Resolver { nexus, premium, file_lists: HashMap::new(), http: http.clone() };
+    let mut resolver =
+        Resolver { nexus: nexus.clone(), premium, link_handler, file_lists: HashMap::new(), http: http.clone() };
 
     // Find what each mod needs
     struct Pending {
@@ -580,6 +639,7 @@ pub async fn install_modlist(
         let done = done.clone();
         let state = state.clone();
         let cancel = cancel.clone();
+        let nexus = nexus.clone();
         let emit = &emit;
         async move {
             let fail = |error: String| MomwFailedMod { name: job.item.name.clone(), error };
@@ -589,6 +649,20 @@ pub async fn install_modlist(
             let mut archives = Vec::new();
             for (info, download) in &job.downloads {
                 let path = cache_dir.join(safe_file_name(&job.item.dir)).join(safe_file_name(&download.file_name));
+                let mut download = download.clone();
+                let cached = download.size.is_some_and(|size| std::fs::metadata(&path).is_ok_and(|m| m.len() == size));
+                if let (Some(click), false) = (download.click.clone(), cached) {
+                    let nexus = nexus.as_ref().ok_or_else(|| fail("Link your Nexus Mods account".into()))?;
+                    emit(
+                        BackgroundOperationPhase::InstallingMods,
+                        format!("Click \"Mod Manager Download\" for {} on Nexus Mods", job.item.name),
+                        done.load(std::sync::atomic::Ordering::Relaxed),
+                        total,
+                        Some(job.item.name.clone()),
+                    );
+                    download.url = link_from_click(nexus, &click, &cancel).await.map_err(fail)?;
+                }
+                let download = &download;
                 download_file(&http, download, &path).await.map_err(fail)?;
                 archives.push((info.clone(), download.clone(), path));
             }
@@ -617,7 +691,8 @@ pub async fn install_modlist(
             Ok((job.item.name.clone(), notes))
         }
     }))
-    .buffer_unordered(PARALLEL_DOWNLOADS)
+    // Free accounts click through the mods one at a time
+    .buffer_unordered(if premium { PARALLEL_DOWNLOADS } else { 1 })
     .collect()
     .await;
 

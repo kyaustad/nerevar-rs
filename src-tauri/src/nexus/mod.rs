@@ -1,9 +1,11 @@
 //! Nexus Mods account and API (v1), for downloading the mods of Modding-OpenMW.com lists.
 //!
-//! Players link their account with Nexus SSO, or by pasting a personal API key. The key is kept in the operating
-//! system's credential store (Windows Credential Manager, macOS Keychain, Secret Service), never in Nerevar's files.
+//! Players link their account with their personal API key (https://next.nexusmods.com/settings/api-keys). The key
+//! is kept in the operating system's credential store (Windows Credential Manager, macOS Keychain, Secret Service),
+//! never in Nerevar's files. Premium accounts download directly; free accounts download through the "Mod Manager
+//! Download" buttons of the Nexus website, whose nxm:// links Nerevar handles (see `nxm`).
 
-pub mod sso;
+pub mod nxm;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -22,8 +24,6 @@ pub struct NexusAccountStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     pub premium: bool,
-    /// Whether this build of Nerevar has a Nexus application id for SSO login.
-    pub sso_available: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -47,6 +47,12 @@ pub struct NexusFile {
     pub category_name: Option<String>,
     #[serde(default)]
     pub size_in_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct NexusMod {
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -145,28 +151,39 @@ impl NexusClient {
         self.get(&format!("games/{game}/mods/{mod_id}/files.json")).await
     }
 
-    /// Download link of a file. Only Premium accounts get links without an nxm:// key.
+    /// Download link of a file. Only Premium accounts get links without the key of an nxm:// link.
     pub async fn download_link(&self, game: &str, mod_id: u64, file_id: u64) -> Result<String, String> {
-        let links: Vec<NexusDownloadLink> =
-            self.get(&format!("games/{game}/mods/{mod_id}/files/{file_id}/download_link.json")).await?;
+        self.download_link_with_key(game, mod_id, file_id, None, None).await
+    }
+
+    pub async fn download_link_with_key(
+        &self,
+        game: &str,
+        mod_id: u64,
+        file_id: u64,
+        key: Option<&str>,
+        expires: Option<&str>,
+    ) -> Result<String, String> {
+        let mut path = format!("games/{game}/mods/{mod_id}/files/{file_id}/download_link.json");
+        if let (Some(key), Some(expires)) = (key, expires) {
+            path.push_str(&format!("?key={}&expires={}", urlencoding::encode(key), urlencoding::encode(expires)));
+        }
+        let links: Vec<NexusDownloadLink> = self.get(&path).await?;
         links.into_iter().next().map(|link| link.uri).ok_or_else(|| "Nexus Mods returned no download link".into())
+    }
+
+    pub async fn mod_details(&self, game: &str, mod_id: u64) -> Result<NexusMod, String> {
+        self.get(&format!("games/{game}/mods/{mod_id}.json")).await
     }
 }
 
 async fn account_status() -> NexusAccountStatus {
-    let sso_available = sso::app_slug().is_some();
     let Some(client) = NexusClient::from_stored_key() else {
-        return NexusAccountStatus { sso_available, ..Default::default() };
+        return NexusAccountStatus::default();
     };
     match client.validate().await {
-        Ok(user) => NexusAccountStatus {
-            linked: true,
-            name: Some(user.name),
-            premium: user.is_premium,
-            sso_available,
-            error: None,
-        },
-        Err(error) => NexusAccountStatus { linked: true, sso_available, error: Some(error), ..Default::default() },
+        Ok(user) => NexusAccountStatus { linked: true, name: Some(user.name), premium: user.is_premium, error: None },
+        Err(error) => NexusAccountStatus { linked: true, error: Some(error), ..Default::default() },
     }
 }
 
@@ -189,13 +206,6 @@ pub async fn nexus_account_status() -> Result<NexusAccountStatus, String> {
 #[tauri::command]
 pub async fn nexus_link_api_key(api_key: String) -> Result<NexusAccountStatus, String> {
     link_key(api_key).await
-}
-
-/// Links the account with Nexus SSO: opens the Nexus authorization page and waits for the player to approve.
-#[tauri::command]
-pub async fn nexus_sso_login() -> Result<NexusAccountStatus, String> {
-    let key = sso::request_api_key().await?;
-    link_key(key).await
 }
 
 #[tauri::command]
